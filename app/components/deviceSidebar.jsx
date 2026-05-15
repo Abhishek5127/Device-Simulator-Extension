@@ -54,7 +54,7 @@ const normalizeUrl = (value) => {
   const trimmedValue = value.trim();
 
   if (!trimmedValue) {
-    return "https://example.com";
+    return "https://githance.in";
   }
 
   if (/^https?:\/\//i.test(trimmedValue)) {

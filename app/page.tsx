@@ -100,14 +100,30 @@ function WebsiteScreen({
   device,
   websiteUrl,
   isRotateMode,
+  onDeviceDragEnd,
+  onDeviceDragMove,
+  onDeviceDragStart,
+  onDeviceHoverEnd,
+  onDeviceHoverStart,
 }: {
   device: (typeof devices)[number];
   websiteUrl: string;
   isRotateMode: boolean;
+  onDeviceDragEnd: () => void;
+  onDeviceDragMove: (movementX: number, movementY: number) => void;
+  onDeviceDragStart: () => void;
+  onDeviceHoverEnd: () => void;
+  onDeviceHoverStart: () => void;
 }) {
   const { screen } = device;
   const position = screen.position as [number, number, number];
   const rotation = screen.rotation as [number, number, number];
+  const isDraggingScreen = useRef(false);
+
+  const stopScreenEvent = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   return (
     <Html
@@ -128,10 +144,49 @@ function WebsiteScreen({
           backfaceVisibility: "hidden",
           contain: "paint",
           isolation: "isolate",
-          pointerEvents: isRotateMode ? "none" : "auto",
+          pointerEvents: "auto",
           transform: "translateZ(0)",
           transformStyle: "preserve-3d",
           willChange: "transform",
+        }}
+        onPointerDown={(event) => {
+          if (!isRotateMode) {
+            return;
+          }
+
+          stopScreenEvent(event);
+          isDraggingScreen.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          onDeviceHoverStart();
+          onDeviceDragStart();
+        }}
+        onPointerEnter={() => {
+          if (isRotateMode) {
+            onDeviceHoverStart();
+          }
+        }}
+        onPointerLeave={() => {
+          if (!isDraggingScreen.current) {
+            onDeviceHoverEnd();
+          }
+        }}
+        onPointerMove={(event) => {
+          if (!isRotateMode || !isDraggingScreen.current) {
+            return;
+          }
+
+          stopScreenEvent(event);
+          onDeviceDragMove(event.movementX, event.movementY);
+        }}
+        onPointerUp={(event) => {
+          if (!isDraggingScreen.current) {
+            return;
+          }
+
+          stopScreenEvent(event);
+          isDraggingScreen.current = false;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          onDeviceDragEnd();
         }}
       >
         <iframe
@@ -235,6 +290,11 @@ function DeviceModel({
         device={device}
         websiteUrl={websiteUrl}
         isRotateMode={isRotateMode}
+        onDeviceDragEnd={onDeviceDragEnd}
+        onDeviceDragMove={onDeviceDragMove}
+        onDeviceDragStart={onDeviceDragStart}
+        onDeviceHoverEnd={onDeviceHoverEnd}
+        onDeviceHoverStart={onDeviceHoverStart}
       />
     </group>
   );
@@ -242,7 +302,7 @@ function DeviceModel({
 
 export default function Home() {
   const [selectedDevice, setSelectedDevice] = useState(devices[0]);
-  const [websiteUrl, setWebsiteUrl] = useState("https://example.com");
+  const [websiteUrl, setWebsiteUrl] = useState("https://githance.in");
   const [isRotateMode, setIsRotateMode] = useState(true);
   const [isPointerOnDevice, setIsPointerOnDevice] = useState(false);
   const [isDraggingBackground, setIsDraggingBackground] = useState(false);
