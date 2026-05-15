@@ -22,6 +22,8 @@ const DEFAULT_MODEL_ROTATION: [number, number, number] = [0, 0, 0];
 const DEFAULT_MODEL_POSITION: [number, number, number] = [0, 0, 0];
 const MODEL_ROTATION_DAMPING = 24;
 const MODEL_ROTATION_SENSITIVITY = 0.008;
+const RECORDING_MAX_HEIGHT = 1080;
+const RECORDING_MAX_WIDTH = 1920;
 const RECORDING_VIDEO_BITS_PER_SECOND = 16_000_000;
 const TEXTURE_KEYS = [
   "map",
@@ -527,17 +529,36 @@ export default function Home() {
   const [resetSignal, setResetSignal] = useState(0);
   const captureStreamRef = useRef<MediaStream | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const displayStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<BlobPart[]>([]);
+  const recordingAnimationFrameRef = useRef<number | null>(null);
+  const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const recordingVideoRef = useRef<HTMLVideoElement | null>(null);
   const recordedVideoUrlRef = useRef<string | null>(null);
+  const stageRef = useRef<HTMLElement | null>(null);
   const controlsEnabled =
     isRotateMode &&
     !isDraggingDevice &&
     (isDraggingBackground || !isPointerOnDevice);
 
   const stopCaptureStream = () => {
+    if (recordingAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(recordingAnimationFrameRef.current);
+      recordingAnimationFrameRef.current = null;
+    }
+
+    if (recordingVideoRef.current) {
+      recordingVideoRef.current.pause();
+      recordingVideoRef.current.srcObject = null;
+      recordingVideoRef.current = null;
+    }
+
     captureStreamRef.current?.getTracks().forEach((track) => track.stop());
     captureStreamRef.current = null;
+    displayStreamRef.current?.getTracks().forEach((track) => track.stop());
+    displayStreamRef.current = null;
+    recordingCanvasRef.current = null;
   };
 
   const closeRecordingPreview = () => {
@@ -595,6 +616,107 @@ export default function Home() {
     return stream;
   };
 
+  const getStageRecordingSize = (stageRect: DOMRect) => {
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const rawWidth = Math.max(2, Math.round(stageRect.width * pixelRatio));
+    const rawHeight = Math.max(2, Math.round(stageRect.height * pixelRatio));
+    const fitScale = Math.min(
+      1,
+      RECORDING_MAX_WIDTH / rawWidth,
+      RECORDING_MAX_HEIGHT / rawHeight,
+    );
+
+    return {
+      height: Math.max(2, Math.round(rawHeight * fitScale)),
+      width: Math.max(2, Math.round(rawWidth * fitScale)),
+    };
+  };
+
+  const createStageRecordingStream = async (sourceStream: MediaStream) => {
+    const stage = stageRef.current;
+
+    if (!stage) {
+      throw new Error("Canvas stage is not ready for recording.");
+    }
+
+    const stageRect = stage.getBoundingClientRect();
+    const { height, width } = getStageRecordingSize(stageRect);
+    const recordingCanvas = document.createElement("canvas");
+    const recordingContext = recordingCanvas.getContext("2d", {
+      alpha: false,
+      desynchronized: true,
+    });
+
+    if (!recordingContext) {
+      throw new Error("Could not create the recording canvas.");
+    }
+
+    const sourceVideo = document.createElement("video");
+
+    recordingCanvas.height = height;
+    recordingCanvas.width = width;
+    sourceVideo.muted = true;
+    sourceVideo.playsInline = true;
+    sourceVideo.srcObject = sourceStream;
+
+    await sourceVideo.play();
+
+    const drawFrame = () => {
+      if (!stageRef.current || !sourceVideo.videoWidth || !sourceVideo.videoHeight) {
+        recordingAnimationFrameRef.current = requestAnimationFrame(drawFrame);
+        return;
+      }
+
+      const liveStageRect = stageRef.current.getBoundingClientRect();
+      const scaleX = sourceVideo.videoWidth / window.innerWidth;
+      const scaleY = sourceVideo.videoHeight / window.innerHeight;
+      const sourceX = Math.max(0, liveStageRect.left * scaleX);
+      const sourceY = Math.max(0, liveStageRect.top * scaleY);
+      const sourceWidth = Math.min(
+        sourceVideo.videoWidth - sourceX,
+        liveStageRect.width * scaleX,
+      );
+      const sourceHeight = Math.min(
+        sourceVideo.videoHeight - sourceY,
+        liveStageRect.height * scaleY,
+      );
+
+      recordingContext.fillStyle = canvasBackgroundColor;
+      recordingContext.fillRect(0, 0, width, height);
+
+      if (sourceWidth > 0 && sourceHeight > 0) {
+        recordingContext.drawImage(
+          sourceVideo,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          width,
+          height,
+        );
+      }
+
+      recordingAnimationFrameRef.current = requestAnimationFrame(drawFrame);
+    };
+
+    drawFrame();
+
+    const outputStream = recordingCanvas.captureStream(60);
+
+    const [outputVideoTrack] = outputStream.getVideoTracks();
+
+    if (outputVideoTrack) {
+      outputVideoTrack.contentHint = "motion";
+    }
+
+    recordingCanvasRef.current = recordingCanvas;
+    recordingVideoRef.current = sourceVideo;
+
+    return outputStream;
+  };
+
   const startRecording = async () => {
     if (isRecording) {
       return;
@@ -610,7 +732,11 @@ export default function Home() {
     recordedChunksRef.current = [];
 
     try {
-      const stream = await getLiveRecordingStream();
+      const sourceStream = await getLiveRecordingStream();
+
+      displayStreamRef.current = sourceStream;
+
+      const stream = await createStageRecordingStream(sourceStream);
       const mimeType = getRecordingMimeType();
       const recorderOptions: MediaRecorderOptions = {
         videoBitsPerSecond: RECORDING_VIDEO_BITS_PER_SECOND,
@@ -625,7 +751,7 @@ export default function Home() {
       captureStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
 
-      stream.getVideoTracks()[0]?.addEventListener(
+      sourceStream.getVideoTracks()[0]?.addEventListener(
         "ended",
         () => {
           if (mediaRecorderRef.current?.state === "recording") {
@@ -764,10 +890,12 @@ export default function Home() {
         onWebsiteChange={handleWebsiteChange}
       />
       <section
-        className="relative h-screen flex-1"
+        ref={stageRef}
+        className="relative h-screen flex-1 [&_canvas]:h-full [&_canvas]:w-full"
         style={{ backgroundColor: canvasBackgroundColor }}
       >
         <Canvas
+          className="h-full w-full"
           camera={{ position: DEFAULT_CAMERA_POSITION, fov: 45 }}
           dpr={[1, 2]}
           gl={{
