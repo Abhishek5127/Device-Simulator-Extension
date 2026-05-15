@@ -64,17 +64,60 @@ const normalizeUrl = (value) => {
   return `https://${trimmedValue}`;
 };
 
+const isValidCssColor = (value) => {
+  if (typeof CSS === "undefined") {
+    return /^#[0-9a-f]{6}$/i.test(value);
+  }
+
+  return CSS.supports("color", value);
+};
+
+const normalizeCssColor = (value) => {
+  if (typeof document === "undefined") {
+    return value;
+  }
+
+  const swatch = document.createElement("span");
+
+  swatch.style.color = value;
+  document.body.appendChild(swatch);
+
+  const normalizedColor = getComputedStyle(swatch).color;
+
+  swatch.remove();
+
+  return normalizedColor || value;
+};
+
+const getColorPickerValue = (value) =>
+  /^#[0-9a-f]{6}$/i.test(value) ? value : "#18181b";
+
 const DeviceSidebar = ({
+  canvasBackgroundColor,
+  onCanvasBackgroundColorChange,
   selectedDeviceId,
   onSelectDevice,
   websiteUrl,
   onWebsiteChange,
 }) => {
   const [draftUrl, setDraftUrl] = useState(websiteUrl);
+  const [draftCanvasBackgroundColor, setDraftCanvasBackgroundColor] = useState(
+    canvasBackgroundColor,
+  );
 
   const handleSubmit = (event) => {
     event.preventDefault();
     onWebsiteChange(normalizeUrl(draftUrl));
+  };
+
+  const handleCanvasBackgroundColorChange = (value) => {
+    setDraftCanvasBackgroundColor(value);
+
+    const trimmedValue = value.trim();
+
+    if (isValidCssColor(trimmedValue)) {
+      onCanvasBackgroundColorChange(normalizeCssColor(trimmedValue));
+    }
   };
 
   return (
@@ -110,6 +153,36 @@ const DeviceSidebar = ({
           </button>
         </div>
       </form>
+
+      <div className="mb-5">
+        <label
+          htmlFor="canvas-background-color"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+        >
+          Canvas Background
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="color"
+            aria-label="Pick canvas background color"
+            value={getColorPickerValue(canvasBackgroundColor)}
+            onChange={(event) =>
+              handleCanvasBackgroundColorChange(event.target.value)
+            }
+            className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-zinc-800 bg-zinc-900 p-1"
+          />
+          <input
+            id="canvas-background-color"
+            type="text"
+            value={draftCanvasBackgroundColor}
+            onChange={(event) =>
+              handleCanvasBackgroundColorChange(event.target.value)
+            }
+            placeholder="#18181b"
+            className="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-sky-400"
+          />
+        </div>
+      </div>
 
       <div className="space-y-2">
         {devices.map((device) => {
