@@ -19,6 +19,22 @@ export const devices = [
     },
   },
   {
+    id: 4,
+    name: "iPhone 17 Orange",
+    dimensions: '6.1"',
+    color: "bg-sky-500",
+    modelPath: "/models/iPhone17Orange.glb",
+    modelScale: 1,
+    screen: {
+      viewport: { width: 398, height: 852 },
+      position: [-0.12, 0, 0],
+      rotation: [0, 0, 0],
+      scale: 0.082,
+      radius: 68,
+    },
+  },
+  
+  {
     id: 2,
     name: "iPad 13",
     dimensions: '11"',

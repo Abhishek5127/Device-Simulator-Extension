@@ -36,7 +36,7 @@ const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 0, 3];
 const DEFAULT_CANVAS_BACKGROUND_COLOR = "#18181b";
 const DEFAULT_MODEL_ROTATION: [number, number, number] = [0, 0, 0];
 const DEFAULT_MODEL_POSITION: [number, number, number] = [0, 0, 0];
-const MODEL_ROTATION_SENSITIVITY = 0.008;
+const MODEL_ROTATION_SENSITIVITY = 0.01;
 const RECORDING_MAX_HEIGHT = 1080;
 const RECORDING_MAX_WIDTH = 1920;
 const RECORDING_VIDEO_BITS_PER_SECOND = 16_000_000;
@@ -1290,7 +1290,14 @@ const DeviceModel = memo(function DeviceModel({
         onDeviceDragEnd();
       }}
     >
-      <primitive object={scene} />
+      <primitive
+        object={scene}
+        rotation={
+          device.id === 4
+            ? [0, Math.PI / 2, 0]
+            : [0, 0, 0]
+        }
+      />
       <WebsiteScreen
         isVisible={isScreenVisible}
         device={device}
