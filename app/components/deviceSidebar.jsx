@@ -26,8 +26,8 @@ export const devices = [
     modelPath: "/models/iPhone17Orange.glb",
     modelScale: 1,
     screen: {
-      viewport: { width: 398, height: 852 },
-      position: [-0.12, 0, 0],
+      viewport: { width: 398, height: 818 },
+      position: [-0.12, 0.025, 0.035],
       rotation: [0, 0, 0],
       scale: 0.082,
       radius: 68,

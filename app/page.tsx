@@ -19,7 +19,9 @@ import {
   MathUtils,
   MOUSE,
   PCFSoftShadowMap,
+  Quaternion,
   SRGBColorSpace,
+  Vector3,
 } from "three";
 import type {
   Group,
@@ -36,6 +38,10 @@ const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 0, 3];
 const DEFAULT_CANVAS_BACKGROUND_COLOR = "#18181b";
 const DEFAULT_MODEL_ROTATION: [number, number, number] = [0, 0, 0];
 const DEFAULT_MODEL_POSITION: [number, number, number] = [0, 0, 0];
+const MODEL_DEPTH_WHEEL_SENSITIVITY = 0.0015;
+const MODEL_DEPTH_LIMIT = 1.25;
+const MODEL_POSITION_DRAG_SENSITIVITY = 0.003;
+const MODEL_POSITION_LIMIT = 1.75;
 const MODEL_ROTATION_SENSITIVITY = 0.01;
 const RECORDING_MAX_HEIGHT = 1080;
 const RECORDING_MAX_WIDTH = 1920;
@@ -532,6 +538,14 @@ const getMovementDuration = (
 
 const formatDuration = (duration: number) => `${duration.toFixed(1)}s`;
 
+const clampModelPosition = (
+  position: [number, number, number],
+): [number, number, number] => [
+  MathUtils.clamp(position[0], -MODEL_POSITION_LIMIT, MODEL_POSITION_LIMIT),
+  MathUtils.clamp(position[1], -MODEL_POSITION_LIMIT, MODEL_POSITION_LIMIT),
+  MathUtils.clamp(position[2], -MODEL_DEPTH_LIMIT, MODEL_DEPTH_LIMIT),
+];
+
 const improveTextureQuality = (scene: Object3D, maxAnisotropy: number) => {
   scene.traverse((object) => {
     const mesh = object as Mesh;
@@ -763,13 +777,12 @@ function SceneCameraDefaults({
       );
       controlsRef.current.update();
     }
-  });
+  }, -2);
 
   return null;
 }
 
 const WebsiteScreen = memo(function WebsiteScreen({
-  isVisible,
   device,
   websiteUrl,
   isRotateMode,
@@ -779,7 +792,6 @@ const WebsiteScreen = memo(function WebsiteScreen({
   onDeviceHoverEnd,
   onDeviceHoverStart,
 }: {
-  isVisible: boolean;
   device: (typeof devices)[number];
   websiteUrl: string;
   isRotateMode: boolean;
@@ -792,27 +804,69 @@ const WebsiteScreen = memo(function WebsiteScreen({
   const { screen } = device;
   const position = screen.position as [number, number, number];
   const rotation = screen.rotation as [number, number, number];
+  const { camera } = useThree();
   const isDraggingScreen = useRef(false);
+  const screenElementRef = useRef<HTMLDivElement | null>(null);
+  const screenGroupRef = useRef<Group | null>(null);
+  const screenIsFacingCameraRef = useRef(true);
+  const screenNormalRef = useRef(new Vector3());
+  const screenPositionRef = useRef(new Vector3());
+  const cameraDirectionRef = useRef(new Vector3());
+  const worldQuaternionRef = useRef(new Quaternion());
 
   const stopScreenEvent = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
   };
 
+  useFrame(() => {
+    const screenElement = screenElementRef.current;
+    const screenGroup = screenGroupRef.current;
+
+    if (!screenElement || !screenGroup) {
+      return;
+    }
+
+    const screenPosition = screenPositionRef.current;
+    const screenNormal = screenNormalRef.current;
+    const cameraDirection = cameraDirectionRef.current;
+    const worldQuaternion = worldQuaternionRef.current;
+
+    screenGroup.getWorldPosition(screenPosition);
+    screenGroup.getWorldQuaternion(worldQuaternion);
+    screenNormal.set(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
+    cameraDirection.subVectors(camera.position, screenPosition).normalize();
+
+    const facingScore = screenNormal.dot(cameraDirection);
+    const wasFacingCamera = screenIsFacingCameraRef.current;
+    const isFacingCamera = wasFacingCamera
+      ? facingScore > -0.08
+      : facingScore > 0.08;
+
+    if (isFacingCamera === wasFacingCamera) {
+      return;
+    }
+
+    screenIsFacingCameraRef.current = isFacingCamera;
+    screenElement.style.opacity = isFacingCamera ? "1" : "0";
+    screenElement.style.pointerEvents = isFacingCamera ? "auto" : "none";
+    screenElement.style.visibility = isFacingCamera ? "visible" : "hidden";
+  }, -0.5);
+
   return (
-    <Html
-      transform
-      center
-      position={position}
-      rotation={rotation}
-      scale={screen.scale}
-      eps={0.001}
-      zIndexRange={[1, 0]}
-    >
+    <group ref={screenGroupRef} position={position} rotation={rotation}>
+      <Html
+        transform
+        center
+        scale={screen.scale}
+        eps={0.001}
+        zIndexRange={[1, 0]}
+      >
       <div
+        ref={screenElementRef}
         className="overflow-hidden bg-white"
         style={{
-          opacity: isVisible ? 1 : 0,
+          opacity: 1,
           transition: "opacity 0.2s ease",
           width: screen.viewport.width,
           height: screen.viewport.height,
@@ -884,7 +938,8 @@ const WebsiteScreen = memo(function WebsiteScreen({
           }}
         />
       </div>
-    </Html>
+      </Html>
+    </group>
   );
 });
 
@@ -934,6 +989,9 @@ const DeviceModel = memo(function DeviceModel({
   ]);
   const hoverInfluenceRef = useRef<[number, number]>([0, 0]);
   const hoverTargetRef = useRef<[number, number]>([0, 0]);
+  const modelPositionOffsetRef = useRef<[number, number, number]>([
+    ...modelPositionOffset,
+  ]);
 
   const movementAnimationRef = useRef<{
     basePosition: [number, number, number];
@@ -949,11 +1007,9 @@ const DeviceModel = memo(function DeviceModel({
   const targetRotationRef = useRef<[number, number, number]>([
     ...DEFAULT_MODEL_ROTATION,
   ]);
-  const [isScreenVisible, setIsScreenVisible] = useState(true);
 
   const rotateDevice = useCallback((movementX: number, movementY: number) => {
     movementAnimationRef.current = null;
-    groupRef.current?.position.set(...modelPositionOffset);
     const targetRotation = targetRotationRef.current;
     const rotationVelocity = rotationVelocityRef.current;
     const gestureGain =
@@ -965,7 +1021,11 @@ const DeviceModel = memo(function DeviceModel({
       movementX * MODEL_ROTATION_SENSITIVITY * gestureGain * 0.18;
     targetRotation[0] += movementY * MODEL_ROTATION_SENSITIVITY * gestureGain;
     targetRotation[1] += movementX * MODEL_ROTATION_SENSITIVITY * gestureGain;
-  }, [modelPositionOffset, motionProfile, speedProfile]);
+  }, [motionProfile, speedProfile]);
+
+  useLayoutEffect(() => {
+    modelPositionOffsetRef.current = [...modelPositionOffset];
+  }, [modelPositionOffset]);
 
   useEffect(() => {
     improveTextureQuality(scene, gl.capabilities.getMaxAnisotropy());
@@ -974,15 +1034,18 @@ const DeviceModel = memo(function DeviceModel({
   useLayoutEffect(() => {
     const { modelRotation } = getDeviceViewDefaults(device.id);
     const nextRotation: [number, number, number] = [...modelRotation];
+    const nextPosition: [number, number, number] = [
+      ...modelPositionOffsetRef.current,
+    ];
 
     currentRotationRef.current = [...nextRotation];
-    currentPositionRef.current = [...modelPositionOffset];
+    currentPositionRef.current = [...nextPosition];
     targetRotationRef.current = [...nextRotation];
     movementAnimationRef.current = null;
     rotationVelocityRef.current = [0, 0, 0];
-    groupRef.current?.position.set(...modelPositionOffset);
+    groupRef.current?.position.set(...nextPosition);
     groupRef.current?.rotation.set(...nextRotation);
-  }, [device.id, modelPositionOffset, resetSignal]);
+  }, [device.id, resetSignal]);
 
   useEffect(() => {
     if (!activeMovement || movementPlaySignal === 0) {
@@ -1008,7 +1071,7 @@ const DeviceModel = memo(function DeviceModel({
 
     targetRotationRef.current = [...toRotation];
     movementAnimationRef.current = {
-      basePosition: [...modelPositionOffset],
+      basePosition: [...modelPositionOffsetRef.current],
       duration,
       elapsed: 0,
       fromRotation,
@@ -1024,7 +1087,6 @@ const DeviceModel = memo(function DeviceModel({
     };
   }, [
     activeMovement,
-    modelPositionOffset,
     motionProfile,
     movementPlaySignal,
     speedProfile,
@@ -1118,16 +1180,6 @@ const DeviceModel = memo(function DeviceModel({
         currentRotation[2],
       );
 
-      const normalizedY =
-        ((currentRotation[1] % (Math.PI * 2)) + Math.PI * 2) %
-        (Math.PI * 2);
-
-      const isBackSide =
-        normalizedY > Math.PI / 2 &&
-        normalizedY < Math.PI * 1.5;
-
-      setIsScreenVisible(!isBackSide);
-
       if (progress >= 1) {
         targetRotationRef.current = [...movementAnimation.toRotation];
         currentPositionRef.current = [...movementAnimation.basePosition];
@@ -1219,16 +1271,7 @@ const DeviceModel = memo(function DeviceModel({
       currentRotation[1],
       currentRotation[2],
     );
-    const normalizedY =
-      ((currentRotation[1] % (Math.PI * 2)) + Math.PI * 2) %
-      (Math.PI * 2);
-
-    const isBackSide =
-      normalizedY > Math.PI / 2 &&
-      normalizedY < Math.PI * 1.5;
-
-    setIsScreenVisible(!isBackSide);
-  });
+  }, -1);
 
   return (
     <group
@@ -1299,7 +1342,6 @@ const DeviceModel = memo(function DeviceModel({
         }
       />
       <WebsiteScreen
-        isVisible={isScreenVisible}
         device={device}
         websiteUrl={websiteUrl}
         isRotateMode={isRotateMode}
@@ -1358,7 +1400,13 @@ export default function Home() {
   const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const recordingVideoRef = useRef<HTMLVideoElement | null>(null);
   const recordedVideoUrlRef = useRef<string | null>(null);
-  const stageRef = useRef<HTMLElement | null>(null);
+  const backgroundDragStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    position: [number, number, number];
+  } | null>(null);
+  const isPointerOnDeviceRef = useRef(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const transitionClipIdRef = useRef(0);
   const trackPlaybackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -1374,10 +1422,11 @@ export default function Home() {
       ),
     [motionProfile, speedProfile, transitionTrack],
   );
-  const controlsEnabled =
-    isRotateMode &&
-    !isDraggingDevice &&
-    (isDraggingBackground || !isPointerOnDevice);
+  const controlsEnabled = false;
+
+  useEffect(() => {
+    isPointerOnDeviceRef.current = isPointerOnDevice;
+  }, [isPointerOnDevice]);
 
   const stopCaptureStream = () => {
     if (recordingAnimationFrameRef.current !== null) {
@@ -1682,6 +1731,8 @@ export default function Home() {
   );
 
   const resetInteractiveView = () => {
+    backgroundDragStartRef.current = null;
+    isPointerOnDeviceRef.current = false;
     setIsDraggingBackground(false);
     setIsDraggingDevice(false);
     setIsPointerOnDevice(false);
@@ -1772,6 +1823,8 @@ export default function Home() {
   };
 
   const handleSelectDevice = (device: (typeof devices)[number]) => {
+    backgroundDragStartRef.current = null;
+    isPointerOnDeviceRef.current = false;
     setSelectedDevice(device);
     setIsDraggingBackground(false);
     setIsDraggingDevice(false);
@@ -1789,17 +1842,87 @@ export default function Home() {
   }, []);
 
   const handleDeviceDragStart = useCallback(() => {
+    backgroundDragStartRef.current = null;
+    isPointerOnDeviceRef.current = true;
     setIsDraggingBackground(false);
     setIsDraggingDevice(true);
   }, []);
 
   const handleDeviceHoverEnd = useCallback(() => {
+    isPointerOnDeviceRef.current = false;
     setIsPointerOnDevice(false);
   }, []);
 
   const handleDeviceHoverStart = useCallback(() => {
+    isPointerOnDeviceRef.current = true;
     setIsPointerOnDevice(true);
   }, []);
+
+  const handleStagePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (
+        !isRotateMode ||
+        event.button !== 0 ||
+        isDraggingDevice ||
+        isPointerOnDeviceRef.current
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      backgroundDragStartRef.current = {
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        position: [...modelPositionOffset],
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsDraggingBackground(true);
+      setIsDraggingDevice(false);
+    },
+    [isDraggingDevice, isRotateMode, modelPositionOffset],
+  );
+
+  const handleStagePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const dragStart = backgroundDragStartRef.current;
+
+      if (!isRotateMode || !isDraggingBackground || !dragStart) {
+        return;
+      }
+
+      if (event.buttons === 0) {
+        backgroundDragStartRef.current = null;
+        setIsDraggingBackground(false);
+        return;
+      }
+
+      event.preventDefault();
+      const deltaX = event.clientX - dragStart.pointerX;
+      const deltaY = event.clientY - dragStart.pointerY;
+
+      setModelPositionOffset(
+        clampModelPosition([
+          dragStart.position[0] + deltaX * MODEL_POSITION_DRAG_SENSITIVITY,
+          dragStart.position[1] - deltaY * MODEL_POSITION_DRAG_SENSITIVITY,
+          dragStart.position[2],
+        ]),
+      );
+    },
+    [isDraggingBackground, isRotateMode],
+  );
+
+  const handleStagePointerEnd = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      backgroundDragStartRef.current = null;
+      setIsDraggingBackground(false);
+      setIsDraggingDevice(false);
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    [],
+  );
 
   const handleStageWheel = useCallback(
     (event: React.WheelEvent<HTMLElement>) => {
@@ -1811,11 +1934,22 @@ export default function Home() {
       const deltaX = MathUtils.clamp(event.deltaX, -140, 140);
       const deltaY = MathUtils.clamp(event.deltaY, -140, 140);
 
+      if (!isPointerOnDevice) {
+        setModelPositionOffset((currentPosition) =>
+          clampModelPosition([
+            currentPosition[0],
+            currentPosition[1],
+            currentPosition[2] - deltaY * MODEL_DEPTH_WHEEL_SENSITIVITY,
+          ]),
+        );
+        return;
+      }
+
       setGestureImpulse((currentImpulse) => ({
         deltaX,
         deltaY,
         signal: currentImpulse.signal + 1,
-        target: isPointerOnDevice ? "device" : "scene",
+        target: "device",
       }));
     },
     [isPointerOnDevice, isRotateMode],
@@ -1838,6 +1972,10 @@ export default function Home() {
         <div
           ref={stageRef}
           className="relative min-h-0 flex-1 [&_canvas]:h-full [&_canvas]:w-full"
+          onPointerDown={handleStagePointerDown}
+          onPointerLeave={handleStagePointerEnd}
+          onPointerMove={handleStagePointerMove}
+          onPointerUp={handleStagePointerEnd}
           onWheel={handleStageWheel}
         >
           <Canvas
@@ -1854,21 +1992,6 @@ export default function Home() {
               stencil: false,
               toneMapping: ACESFilmicToneMapping,
               toneMappingExposure: 1.08,
-            }}
-            onPointerDown={() => {
-              if (isRotateMode && !isPointerOnDevice) {
-                setIsDraggingBackground(true);
-                setIsDraggingDevice(false);
-              }
-            }}
-            onPointerLeave={() => {
-              setIsDraggingBackground(false);
-              setIsDraggingDevice(false);
-              setIsPointerOnDevice(false);
-            }}
-            onPointerUp={() => {
-              setIsDraggingBackground(false);
-              setIsDraggingDevice(false);
             }}
           >
             <color attach="background" args={[canvasBackgroundColor]} />
@@ -1962,7 +2085,7 @@ export default function Home() {
                   </p>
                   <p className="text-[11px] text-zinc-500">
                     {transitionTrack.length
-                      ? `${transitionTrack.length} shots · ${formatDuration(
+                      ? `${transitionTrack.length} shots - ${formatDuration(
                         transitionTrackDuration,
                       )}`
                       : "Add a shot, then press play"}
