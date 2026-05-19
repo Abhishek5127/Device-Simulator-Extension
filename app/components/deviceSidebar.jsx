@@ -26,11 +26,11 @@ export const devices = [
     modelPath: "/models/iPhone17Orange.glb",
     modelScale: 1,
     screen: {
-      viewport: { width: 398, height: 818 },
+      viewport: { width: 376, height: 806 },
       position: [-0.12, 0.025, 0.035],
       rotation: [0, 0, 0],
       scale: 0.082,
-      radius: 68,
+      radius: 58,
     },
   },
   
@@ -113,7 +113,11 @@ const DeviceSidebar = ({
   onCanvasBackgroundColorChange,
   selectedDeviceId,
   onSelectDevice,
+  screenContentName,
+  screenContentType,
   websiteUrl,
+  onMediaUpload,
+  onUseWebsiteContent,
   onWebsiteChange,
 }) => {
   const [draftUrl, setDraftUrl] = useState(websiteUrl);
@@ -134,6 +138,16 @@ const DeviceSidebar = ({
     if (isValidCssColor(trimmedValue)) {
       onCanvasBackgroundColorChange(normalizeCssColor(trimmedValue));
     }
+  };
+
+  const handleMediaUpload = (event) => {
+    const file = event.target.files?.[0];
+
+    if (file) {
+      onMediaUpload(file);
+    }
+
+    event.target.value = "";
   };
 
   return (
@@ -169,6 +183,38 @@ const DeviceSidebar = ({
           </button>
         </div>
       </form>
+
+      <div className="mb-5">
+        <label
+          htmlFor="screen-media"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+        >
+          Photo / Video
+        </label>
+        <input
+          id="screen-media"
+          type="file"
+          accept="image/*,video/*"
+          onChange={handleMediaUpload}
+          className="block w-full cursor-pointer rounded-md border border-zinc-800 bg-zinc-900 text-sm text-zinc-100 file:mr-3 file:border-0 file:bg-sky-400 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950 hover:file:bg-sky-300"
+        />
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-zinc-500">
+          <span className="min-w-0 truncate">
+            {screenContentType === "website"
+              ? "Website active"
+              : `${screenContentType}: ${screenContentName}`}
+          </span>
+          {screenContentType !== "website" ? (
+            <button
+              type="button"
+              onClick={onUseWebsiteContent}
+              className="shrink-0 rounded border border-zinc-800 px-2 py-1 font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-zinc-100"
+            >
+              Website
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       <div className="mb-5">
         <label

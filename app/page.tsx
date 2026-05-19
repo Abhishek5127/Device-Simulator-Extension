@@ -38,6 +38,11 @@ const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 0, 3];
 const DEFAULT_CANVAS_BACKGROUND_COLOR = "#18181b";
 const DEFAULT_MODEL_ROTATION: [number, number, number] = [0, 0, 0];
 const DEFAULT_MODEL_POSITION: [number, number, number] = [0, 0, 0];
+const DEFAULT_WEBSITE_URL = "https://githance.in";
+const DEFAULT_ANIMATION_TRACK_ID = "animation-track-1";
+const DEFAULT_MEDIA_TRACK_ID = "media-track-1";
+const DEFAULT_STILL_DURATION = 5;
+const MIN_CLIP_DURATION = 0.25;
 const MODEL_DEPTH_WHEEL_SENSITIVITY = 0.0015;
 const MODEL_DEPTH_LIMIT = 1.25;
 const MODEL_POSITION_DRAG_SENSITIVITY = 0.003;
@@ -46,6 +51,8 @@ const MODEL_ROTATION_SENSITIVITY = 0.01;
 const RECORDING_MAX_HEIGHT = 1080;
 const RECORDING_MAX_WIDTH = 1920;
 const RECORDING_VIDEO_BITS_PER_SECOND = 16_000_000;
+const SNAP_INTERVAL = 0.25;
+const TIMELINE_BASE_PIXELS_PER_SECOND = 86;
 const TEXTURE_KEYS = [
   "map",
   "emissiveMap",
@@ -77,6 +84,10 @@ type MovementPreset = {
 
 type TransitionClip = MovementPreset & {
   clipId: number;
+  duration: number;
+  enabled: boolean;
+  start: number;
+  trackId: string;
 };
 
 type MotionProfile = {
@@ -108,6 +119,50 @@ type GestureImpulse = {
   deltaY: number;
   signal: number;
   target: "device" | "scene";
+};
+
+type ScreenContent = {
+  label: string;
+  mimeType?: string;
+  type: "website" | "image" | "video";
+  url: string;
+};
+
+type TimelineTrackKind = "media" | "animation";
+
+type TimelineTrack = {
+  id: string;
+  kind: TimelineTrackKind;
+  muted: boolean;
+  name: string;
+  order: number;
+};
+
+type MediaTimelineClip = {
+  clipId: number;
+  duration: number;
+  enabled: boolean;
+  kind: ScreenContent["type"];
+  label: string;
+  start: number;
+  trackId: string;
+};
+
+type TimelineAnimationSample = {
+  camera: [number, number, number];
+  position: [number, number, number];
+  rotation: [number, number, number];
+};
+
+type ClipEditMode = "move" | "trim-start" | "trim-end";
+
+type ClipEditState = {
+  clipId: number;
+  initialDuration: number;
+  initialStart: number;
+  kind: TimelineTrackKind;
+  mode: ClipEditMode;
+  pointerX: number;
 };
 
 const MOTION_PROFILES: MotionProfile[] = [
@@ -538,6 +593,86 @@ const getMovementDuration = (
 
 const formatDuration = (duration: number) => `${duration.toFixed(1)}s`;
 
+const formatMediaDuration = (duration: number) => {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return "Video";
+  }
+
+  const minutes = Math.floor(duration / 60);
+  const seconds = Math.floor(duration % 60);
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+};
+
+const snapTimelineTime = (time: number) =>
+  Math.max(0, Math.round(time / SNAP_INTERVAL) * SNAP_INTERVAL);
+
+const getTimelineEnd = (clips: Array<{ duration: number; start: number }>) =>
+  clips.reduce(
+    (latestEnd, clip) => Math.max(latestEnd, clip.start + clip.duration),
+    0,
+  );
+
+const getOrderedTracks = (tracks: TimelineTrack[], kind: TimelineTrackKind) =>
+  tracks
+    .filter((track) => track.kind === kind)
+    .slice()
+    .sort((firstTrack, secondTrack) => firstTrack.order - secondTrack.order);
+
+const getTrackMutedMap = (tracks: TimelineTrack[]) =>
+  new Map(tracks.map((track) => [track.id, track.muted]));
+
+const sampleAnimationTimeline = (
+  time: number,
+  clips: TransitionClip[],
+  tracks: TimelineTrack[],
+  motionProfile: MotionProfile,
+): TimelineAnimationSample | null => {
+  const trackMutedMap = getTrackMutedMap(tracks);
+  const sample: TimelineAnimationSample = {
+    camera: [0, 0, 0],
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+  };
+  let hasSample = false;
+
+  clips.forEach((clip) => {
+    if (
+      !clip.enabled ||
+      trackMutedMap.get(clip.trackId) ||
+      time < clip.start ||
+      time > clip.start + clip.duration
+    ) {
+      return;
+    }
+
+    const progress = MathUtils.clamp((time - clip.start) / clip.duration, 0, 1);
+    const easedProgress = easeInOutCubic(progress);
+    const arcProgress = Math.sin(progress * Math.PI);
+
+    hasSample = true;
+    sample.rotation[0] +=
+      clip.rotation[0] * motionProfile.rotationIntensity * easedProgress;
+    sample.rotation[1] +=
+      clip.rotation[1] * motionProfile.rotationIntensity * easedProgress;
+    sample.rotation[2] +=
+      clip.rotation[2] * motionProfile.rotationIntensity * easedProgress;
+    sample.position[0] +=
+      clip.position[0] * motionProfile.movementDistance * arcProgress;
+    sample.position[1] +=
+      clip.position[1] * motionProfile.movementDistance * arcProgress;
+    sample.position[2] +=
+      (clip.position[2] * motionProfile.movementDistance +
+        motionProfile.depthDistance * 0.45) *
+      arcProgress;
+    sample.camera[0] += clip.camera[0] * motionProfile.cameraMomentum * arcProgress;
+    sample.camera[1] += clip.camera[1] * motionProfile.cameraMomentum * arcProgress;
+    sample.camera[2] += clip.camera[2] * motionProfile.cameraMomentum * arcProgress;
+  });
+
+  return hasSample ? sample : null;
+};
+
 const clampModelPosition = (
   position: [number, number, number],
 ): [number, number, number] => [
@@ -605,6 +740,7 @@ function SceneCameraDefaults({
   movementPlaySignal,
   resetSignal,
   speedProfile,
+  timelineCameraOffset,
 }: {
   activeMovement: MovementPreset | null;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
@@ -615,6 +751,7 @@ function SceneCameraDefaults({
   movementPlaySignal: number;
   resetSignal: number;
   speedProfile: SpeedProfile;
+  timelineCameraOffset: [number, number, number];
 }) {
   const { camera } = useThree();
   const cameraRef = useRef(camera);
@@ -710,18 +847,21 @@ function SceneCameraDefaults({
       basePosition[0] +
       Math.sin(elapsedTime * 0.22) * idleOrbit +
       impulse[0] +
-      velocity[0];
+      velocity[0] +
+      timelineCameraOffset[0];
     const targetY =
       basePosition[1] +
       Math.cos(elapsedTime * 0.18) * idleOrbit * 0.35 +
       impulse[1] +
       velocity[1] +
+      timelineCameraOffset[1] +
       (1 - entranceProgress) * 0.04;
     const targetZ =
       basePosition[2] +
       Math.sin(elapsedTime * 0.16) * idleDolly +
       impulse[2] +
       velocity[2] +
+      timelineCameraOffset[2] +
       (1 - entranceProgress) * 0.28;
     const cameraDamping = Math.max(
       8,
@@ -784,22 +924,36 @@ function SceneCameraDefaults({
 
 const WebsiteScreen = memo(function WebsiteScreen({
   device,
-  websiteUrl,
+  mediaClipStart,
+  isMediaPlaying,
   isRotateMode,
+  mediaTimelineTime,
+  mediaPlaySignal,
+  screenContent,
   onDeviceDragEnd,
   onDeviceDragMove,
   onDeviceDragStart,
   onDeviceHoverEnd,
   onDeviceHoverStart,
+  onMediaDurationChange,
+  onMediaEnded,
+  onMediaPlayStateChange,
 }: {
   device: (typeof devices)[number];
-  websiteUrl: string;
+  mediaClipStart: number;
+  isMediaPlaying: boolean;
   isRotateMode: boolean;
+  mediaTimelineTime: number;
+  mediaPlaySignal: number;
+  screenContent: ScreenContent;
   onDeviceDragEnd: () => void;
   onDeviceDragMove: (movementX: number, movementY: number) => void;
   onDeviceDragStart: () => void;
   onDeviceHoverEnd: () => void;
   onDeviceHoverStart: () => void;
+  onMediaDurationChange: (duration: number) => void;
+  onMediaEnded: () => void;
+  onMediaPlayStateChange: (isPlaying: boolean) => void;
 }) {
   const { screen } = device;
   const position = screen.position as [number, number, number];
@@ -809,6 +963,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
   const screenElementRef = useRef<HTMLDivElement | null>(null);
   const screenGroupRef = useRef<Group | null>(null);
   const screenIsFacingCameraRef = useRef(true);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenNormalRef = useRef(new Vector3());
   const screenPositionRef = useRef(new Vector3());
   const cameraDirectionRef = useRef(new Vector3());
@@ -852,6 +1007,40 @@ const WebsiteScreen = memo(function WebsiteScreen({
     screenElement.style.pointerEvents = isFacingCamera ? "auto" : "none";
     screenElement.style.visibility = isFacingCamera ? "visible" : "hidden";
   }, -0.5);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (screenContent.type !== "video" || !video) {
+      return;
+    }
+
+    const targetTime = MathUtils.clamp(
+      mediaTimelineTime - mediaClipStart,
+      0,
+      Number.isFinite(video.duration) ? video.duration : mediaTimelineTime,
+    );
+
+    if (Math.abs(video.currentTime - targetTime) > 0.035) {
+      video.currentTime = targetTime;
+    }
+
+    if (isMediaPlaying) {
+      void video.play().catch(() => {
+        onMediaPlayStateChange(false);
+      });
+      return;
+    }
+
+    video.pause();
+  }, [
+    isMediaPlaying,
+    mediaClipStart,
+    mediaPlaySignal,
+    mediaTimelineTime,
+    onMediaPlayStateChange,
+    screenContent,
+  ]);
 
   return (
     <group ref={screenGroupRef} position={position} rotation={rotation}>
@@ -920,23 +1109,71 @@ const WebsiteScreen = memo(function WebsiteScreen({
           onDeviceDragEnd();
         }}
       >
-        <iframe
-          key={`${device.id}-${websiteUrl}`}
-          title={`${device.name} website preview`}
-          src={websiteUrl}
-          className="h-full w-full border-0 bg-white"
-          loading="eager"
-          style={{
-            backfaceVisibility: "hidden",
-            borderRadius: "inherit",
-            clipPath: "inherit",
-            display: "block",
-            pointerEvents: isRotateMode ? "none" : "auto",
-            textRendering: "geometricPrecision",
-            transform: "translate3d(0, 0, 0)",
-            willChange: "transform",
-          }}
-        />
+        {screenContent.type === "website" ? (
+          <iframe
+            key={`${device.id}-${screenContent.url}`}
+            title={`${device.name} website preview`}
+            src={screenContent.url}
+            className="h-full w-full border-0 bg-white"
+            loading="eager"
+            style={{
+              backfaceVisibility: "hidden",
+              borderRadius: "inherit",
+              clipPath: "inherit",
+              display: "block",
+              pointerEvents: isRotateMode ? "none" : "auto",
+              textRendering: "geometricPrecision",
+              transform: "translate3d(0, 0, 0)",
+              willChange: "transform",
+            }}
+          />
+        ) : screenContent.type === "image" ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Uploaded object URLs cannot be optimized through next/image.
+          <img
+            key={screenContent.url}
+            alt=""
+            src={screenContent.url}
+            className="h-full w-full bg-black object-cover"
+            draggable={false}
+            style={{
+              backfaceVisibility: "hidden",
+              borderRadius: "inherit",
+              clipPath: "inherit",
+              display: "block",
+              pointerEvents: "none",
+              transform: "translate3d(0, 0, 0)",
+              willChange: "transform",
+            }}
+          />
+        ) : (
+          <video
+            key={screenContent.url}
+            ref={videoRef}
+            src={screenContent.url}
+            className="h-full w-full bg-black object-cover"
+            controls={!isRotateMode}
+            playsInline
+            preload="auto"
+            style={{
+              backfaceVisibility: "hidden",
+              borderRadius: "inherit",
+              clipPath: "inherit",
+              display: "block",
+              pointerEvents: isRotateMode ? "none" : "auto",
+              transform: "translate3d(0, 0, 0)",
+              willChange: "transform",
+            }}
+            onEnded={() => {
+              onMediaEnded();
+              onMediaPlayStateChange(false);
+            }}
+            onLoadedMetadata={(event) => {
+              onMediaDurationChange(event.currentTarget.duration);
+            }}
+            onPause={() => onMediaPlayStateChange(false)}
+            onPlay={() => onMediaPlayStateChange(true)}
+          />
+        )}
       </div>
       </Html>
     </group>
@@ -951,32 +1188,48 @@ const DeviceModel = memo(function DeviceModel({
   isPointerOnDevice,
   movementPlaySignal,
   motionProfile,
-  websiteUrl,
+  isMediaPlaying,
   isRotateMode,
+  mediaClipStart,
+  mediaTimelineTime,
+  mediaPlaySignal,
   modelPositionOffset,
   resetSignal,
+  screenContent,
   speedProfile,
+  timelineSample,
   onDeviceDragEnd,
   onDeviceDragStart,
   onDeviceHoverEnd,
   onDeviceHoverStart,
+  onMediaDurationChange,
+  onMediaEnded,
+  onMediaPlayStateChange,
 }: {
   activeMovement: MovementPreset | null;
   device: (typeof devices)[number];
   gestureImpulse: GestureImpulse;
   isDraggingDevice: boolean;
+  isMediaPlaying: boolean;
   isPointerOnDevice: boolean;
   movementPlaySignal: number;
   motionProfile: MotionProfile;
-  websiteUrl: string;
   isRotateMode: boolean;
+  mediaClipStart: number;
+  mediaTimelineTime: number;
+  mediaPlaySignal: number;
   modelPositionOffset: [number, number, number];
   resetSignal: number;
+  screenContent: ScreenContent;
   speedProfile: SpeedProfile;
+  timelineSample: TimelineAnimationSample | null;
   onDeviceDragEnd: () => void;
   onDeviceDragStart: () => void;
   onDeviceHoverEnd: () => void;
   onDeviceHoverStart: () => void;
+  onMediaDurationChange: (duration: number) => void;
+  onMediaEnded: () => void;
+  onMediaPlayStateChange: (isPlaying: boolean) => void;
 }) {
   const { scene } = useGLTF(device.modelPath);
   const { gl } = useThree();
@@ -1119,6 +1372,50 @@ const DeviceModel = memo(function DeviceModel({
     const group = groupRef.current;
 
     if (!group) {
+      return;
+    }
+
+    if (timelineSample) {
+      movementAnimationRef.current = null;
+      const hoverInfluence = hoverInfluenceRef.current;
+      const hoverTarget = hoverTargetRef.current;
+
+      hoverInfluence[0] = MathUtils.damp(
+        hoverInfluence[0],
+        isPointerOnDevice ? hoverTarget[0] : 0,
+        10,
+        delta,
+      );
+      hoverInfluence[1] = MathUtils.damp(
+        hoverInfluence[1],
+        isPointerOnDevice ? hoverTarget[1] : 0,
+        10,
+        delta,
+      );
+
+      const sampledRotation: [number, number, number] = [
+        timelineSample.rotation[0] + hoverInfluence[1] * 0.075,
+        timelineSample.rotation[1] + hoverInfluence[0] * 0.085,
+        timelineSample.rotation[2] - hoverInfluence[0] * 0.035,
+      ];
+      const sampledPosition: [number, number, number] = [
+        modelPositionOffset[0] +
+        timelineSample.position[0] +
+        hoverInfluence[0] * 0.012,
+        modelPositionOffset[1] +
+        timelineSample.position[1] -
+        hoverInfluence[1] * 0.012,
+        modelPositionOffset[2] +
+        timelineSample.position[2] +
+        (isPointerOnDevice ? motionProfile.hoverLift : 0),
+      ];
+
+      currentRotationRef.current = [...sampledRotation];
+      currentPositionRef.current = [...sampledPosition];
+      targetRotationRef.current = [...sampledRotation];
+      rotationVelocityRef.current = [0, 0, 0];
+      group.position.set(...sampledPosition);
+      group.rotation.set(...sampledRotation);
       return;
     }
 
@@ -1343,27 +1640,480 @@ const DeviceModel = memo(function DeviceModel({
       />
       <WebsiteScreen
         device={device}
-        websiteUrl={websiteUrl}
+        mediaClipStart={mediaClipStart}
+        isMediaPlaying={isMediaPlaying}
         isRotateMode={isRotateMode}
+        mediaTimelineTime={mediaTimelineTime}
+        mediaPlaySignal={mediaPlaySignal}
+        screenContent={screenContent}
         onDeviceDragEnd={onDeviceDragEnd}
         onDeviceDragMove={rotateDevice}
         onDeviceDragStart={onDeviceDragStart}
         onDeviceHoverEnd={onDeviceHoverEnd}
         onDeviceHoverStart={onDeviceHoverStart}
+        onMediaDurationChange={onMediaDurationChange}
+        onMediaEnded={onMediaEnded}
+        onMediaPlayStateChange={onMediaPlayStateChange}
       />
     </group>
   );
 });
+
+function TimelineEditor({
+  activeAnimationClipId,
+  animationClips,
+  animationTracks,
+  isAnimationPlaying,
+  isMasterPlaying,
+  isMediaPlaying,
+  isPresetListOpen,
+  mediaClips,
+  mediaTrackLabel,
+  mediaTrackSubtitle,
+  mediaTracks,
+  timelineDuration,
+  timelineTime,
+  timelineZoom,
+  onAddMovementToTrack,
+  onAddTrack,
+  onClearAnimations,
+  onClipDelete,
+  onClipSelect,
+  onClipUpdate,
+  onDeleteTrack,
+  onDuplicateTrack,
+  onMuteTrack,
+  onReorderTrack,
+  onSeek,
+  onTimelineZoomChange,
+  onToggleAnimationPlayback,
+  onToggleMasterPlayback,
+  onToggleMediaPlayback,
+  onTogglePresetList,
+}: {
+  activeAnimationClipId: number | null;
+  animationClips: TransitionClip[];
+  animationTracks: TimelineTrack[];
+  isAnimationPlaying: boolean;
+  isMasterPlaying: boolean;
+  isMediaPlaying: boolean;
+  isPresetListOpen: boolean;
+  mediaClips: MediaTimelineClip[];
+  mediaTrackLabel: string;
+  mediaTrackSubtitle: string;
+  mediaTracks: TimelineTrack[];
+  timelineDuration: number;
+  timelineTime: number;
+  timelineZoom: number;
+  onAddMovementToTrack: (movement: MovementPreset) => void;
+  onAddTrack: (kind: TimelineTrackKind) => void;
+  onClearAnimations: () => void;
+  onClipDelete: (kind: TimelineTrackKind, clipId: number) => void;
+  onClipSelect: (clip: TransitionClip) => void;
+  onClipUpdate: (
+    kind: TimelineTrackKind,
+    clipId: number,
+    update: Partial<Pick<MediaTimelineClip, "duration" | "start" | "trackId">>,
+  ) => void;
+  onDeleteTrack: (kind: TimelineTrackKind, trackId: string) => void;
+  onDuplicateTrack: (kind: TimelineTrackKind, track: TimelineTrack) => void;
+  onMuteTrack: (kind: TimelineTrackKind, trackId: string) => void;
+  onReorderTrack: (
+    kind: TimelineTrackKind,
+    trackId: string,
+    direction: -1 | 1,
+  ) => void;
+  onSeek: (time: number) => void;
+  onTimelineZoomChange: (zoom: number) => void;
+  onToggleAnimationPlayback: () => void;
+  onToggleMasterPlayback: () => void;
+  onToggleMediaPlayback: () => void;
+  onTogglePresetList: () => void;
+}) {
+  const timelineRootRef = useRef<HTMLDivElement | null>(null);
+  const [clipEdit, setClipEdit] = useState<ClipEditState | null>(null);
+  const pixelsPerSecond = TIMELINE_BASE_PIXELS_PER_SECOND * timelineZoom;
+  const timelineWidth = Math.max(900, timelineDuration * pixelsPerSecond + 120);
+  const playheadX = timelineTime * pixelsPerSecond;
+  const orderedMediaTracks = getOrderedTracks(mediaTracks, "media");
+  const orderedAnimationTracks = getOrderedTracks(animationTracks, "animation");
+
+  const beginClipEdit = (
+    kind: TimelineTrackKind,
+    clip: MediaTimelineClip | TransitionClip,
+    mode: ClipEditMode,
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    timelineRootRef.current?.setPointerCapture(event.pointerId);
+    setClipEdit({
+      clipId: clip.clipId,
+      initialDuration: clip.duration,
+      initialStart: clip.start,
+      kind,
+      mode,
+      pointerX: event.clientX,
+    });
+  };
+
+  const updateClipEdit = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!clipEdit) {
+      return;
+    }
+
+    const deltaSeconds = (event.clientX - clipEdit.pointerX) / pixelsPerSecond;
+
+    if (clipEdit.mode === "move") {
+      onClipUpdate(clipEdit.kind, clipEdit.clipId, {
+        start: snapTimelineTime(clipEdit.initialStart + deltaSeconds),
+      });
+      return;
+    }
+
+    if (clipEdit.mode === "trim-start") {
+      const nextStart = snapTimelineTime(clipEdit.initialStart + deltaSeconds);
+      const maxStart =
+        clipEdit.initialStart + clipEdit.initialDuration - MIN_CLIP_DURATION;
+
+      onClipUpdate(clipEdit.kind, clipEdit.clipId, {
+        duration:
+          clipEdit.initialDuration +
+          clipEdit.initialStart -
+          Math.min(nextStart, maxStart),
+        start: Math.min(nextStart, maxStart),
+      });
+      return;
+    }
+
+    onClipUpdate(clipEdit.kind, clipEdit.clipId, {
+      duration: Math.max(
+        MIN_CLIP_DURATION,
+        snapTimelineTime(clipEdit.initialDuration + deltaSeconds),
+      ),
+    });
+  };
+
+  const endClipEdit = (event: React.PointerEvent<HTMLDivElement>) => {
+    setClipEdit(null);
+
+    if (timelineRootRef.current?.hasPointerCapture(event.pointerId)) {
+      timelineRootRef.current.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const renderClip = (
+    kind: TimelineTrackKind,
+    clip: MediaTimelineClip | TransitionClip,
+  ) => {
+    const left = clip.start * pixelsPerSecond;
+    const width = Math.max(36, clip.duration * pixelsPerSecond);
+    const isAnimationClip = kind === "animation";
+    const animationClip = clip as TransitionClip;
+    const mediaClip = clip as MediaTimelineClip;
+
+    return (
+      <div
+        key={`${kind}-${clip.clipId}`}
+        className={`group absolute top-2 flex h-10 items-center overflow-hidden rounded border text-left shadow-lg transition ${isAnimationClip && activeAnimationClipId === clip.clipId
+          ? "border-sky-300 bg-sky-400/20 shadow-sky-400/20"
+          : "border-zinc-700 bg-zinc-950 hover:border-sky-400"
+          }`}
+        style={{ left, width }}
+        onDoubleClick={() => {
+          if (isAnimationClip) {
+            onClipSelect(animationClip);
+          }
+        }}
+        onPointerDown={(event) => beginClipEdit(kind, clip, "move", event)}
+      >
+        <div
+          className="h-full w-2 cursor-ew-resize bg-zinc-700 transition group-hover:bg-sky-400"
+          onPointerDown={(event) => beginClipEdit(kind, clip, "trim-start", event)}
+        />
+        <div className="min-w-0 flex-1 px-2">
+          <p className="truncate text-xs font-semibold text-zinc-100">
+            {isAnimationClip ? animationClip.name : mediaClip.label}
+          </p>
+          <p className="text-[10px] text-zinc-500">
+            {formatDuration(clip.start)} - {formatDuration(clip.start + clip.duration)}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-100 group-hover:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClipDelete(kind, clip.clipId);
+          }}
+        >
+          x
+        </button>
+        <div
+          className="h-full w-2 cursor-ew-resize bg-zinc-700 transition group-hover:bg-sky-400"
+          onPointerDown={(event) => beginClipEdit(kind, clip, "trim-end", event)}
+        />
+      </div>
+    );
+  };
+
+  const renderSection = (
+    kind: TimelineTrackKind,
+    title: string,
+    subtitle: string,
+    tracks: TimelineTrack[],
+    clips: Array<MediaTimelineClip | TransitionClip>,
+    isPlaying: boolean,
+    onTogglePlayback: () => void,
+  ) => (
+    <div className="min-h-0 rounded-md border border-zinc-800 bg-zinc-950/70">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-zinc-800 px-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            disabled={kind === "animation" && !animationClips.length}
+            onClick={onTogglePlayback}
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-md border transition ${kind === "media" || animationClips.length
+              ? "border-sky-400 bg-sky-400 text-zinc-950 hover:bg-sky-300"
+              : "cursor-not-allowed border-zinc-800 bg-zinc-900 text-zinc-600"
+              }`}
+            title={isPlaying ? `Pause ${title}` : `Play ${title}`}
+          >
+            <PlayTrackIcon isPlaying={isPlaying} />
+          </button>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {title}
+            </p>
+            <p className="truncate text-[11px] text-zinc-500">{subtitle}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {kind === "animation" ? (
+            <>
+              <button
+                type="button"
+                onClick={onTogglePresetList}
+                className={`h-8 rounded-md border px-3 text-xs font-semibold transition ${isPresetListOpen
+                  ? "border-sky-400 bg-sky-400 text-zinc-950"
+                  : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
+                  }`}
+              >
+                Add Shot
+              </button>
+              <button
+                type="button"
+                onClick={onClearAnimations}
+                className="h-8 rounded-md border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-100"
+              >
+                Clear
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onAddTrack(kind)}
+            className="h-8 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-zinc-100"
+          >
+            Track +
+          </button>
+        </div>
+      </div>
+      <div className="max-h-32 overflow-auto">
+        {tracks.map((track) => (
+          <div
+            key={track.id}
+            className="grid h-16 border-b border-zinc-900 last:border-b-0"
+            style={{ gridTemplateColumns: "156px 1fr" }}
+          >
+            <div className="flex items-center gap-1 border-r border-zinc-800 px-2">
+              <button
+                type="button"
+                onClick={() => onMuteTrack(kind, track.id)}
+                className={`grid h-7 w-7 place-items-center rounded border text-[10px] font-bold ${track.muted
+                  ? "border-red-400 bg-red-500 text-white"
+                  : "border-zinc-800 bg-zinc-900 text-zinc-300"
+                  }`}
+                title={track.muted ? "Unmute track" : "Mute track"}
+              >
+                M
+              </button>
+              <button
+                type="button"
+                onClick={() => onReorderTrack(kind, track.id, -1)}
+                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
+                title="Move track up"
+              >
+                ^
+              </button>
+              <button
+                type="button"
+                onClick={() => onReorderTrack(kind, track.id, 1)}
+                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
+                title="Move track down"
+              >
+                v
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-zinc-200">
+                  {track.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onDuplicateTrack(kind, track)}
+                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
+                title="Duplicate track"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => onDeleteTrack(kind, track.id)}
+                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
+                title="Delete track"
+              >
+                x
+              </button>
+            </div>
+            <div className="relative overflow-hidden">
+              <div className="relative h-full" style={{ width: timelineWidth }}>
+                <div
+                  className="absolute inset-y-0 w-px bg-sky-300 shadow-[0_0_16px_rgba(56,189,248,0.9)]"
+                  style={{ left: playheadX }}
+                />
+                {clips
+                  .filter((clip) => clip.trackId === track.id)
+                  .map((clip) => renderClip(kind, clip))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      ref={timelineRootRef}
+      className="h-72 shrink-0 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
+      onPointerMove={updateClipEdit}
+      onPointerUp={endClipEdit}
+    >
+      <div className="flex h-full flex-col gap-2">
+        <div className="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/80 px-2 py-2">
+          <button
+            type="button"
+            onClick={onToggleMasterPlayback}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-sky-400 bg-sky-400 text-zinc-950 transition hover:bg-sky-300"
+            title={isMasterPlaying ? "Pause all timelines" : "Play all timelines"}
+          >
+            <PlayTrackIcon isPlaying={isMasterPlaying} />
+          </button>
+          <div className="w-20 text-xs font-semibold text-zinc-400">
+            {formatDuration(timelineTime)}
+          </div>
+          <input
+            aria-label="Master timeline playhead"
+            type="range"
+            min={0}
+            max={timelineDuration}
+            step={1 / 60}
+            value={timelineTime}
+            onChange={(event) => onSeek(Number(event.target.value))}
+            className="min-w-0 flex-1 accent-sky-400"
+          />
+          <input
+            aria-label="Jump to timestamp"
+            type="number"
+            min={0}
+            max={timelineDuration}
+            step={0.1}
+            value={Number(timelineTime.toFixed(2))}
+            onChange={(event) => onSeek(Number(event.target.value))}
+            className="h-9 w-20 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 outline-none focus:border-sky-400"
+          />
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Zoom
+            <input
+              aria-label="Timeline zoom"
+              type="range"
+              min={0.55}
+              max={2.6}
+              step={0.05}
+              value={timelineZoom}
+              onChange={(event) => onTimelineZoomChange(Number(event.target.value))}
+              className="w-28 accent-sky-400"
+            />
+          </label>
+        </div>
+        {isPresetListOpen ? (
+          <div className="flex h-9 items-center gap-1 overflow-x-auto">
+            {MOVEMENT_PRESETS.map((movement) => (
+              <button
+                key={movement.id}
+                type="button"
+                onClick={() => onAddMovementToTrack(movement)}
+                className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs font-semibold text-zinc-200 transition hover:border-sky-400 hover:bg-zinc-800"
+              >
+                <span
+                  className={`grid h-5 w-5 place-items-center rounded text-[9px] font-bold ${movement.colorClass}`}
+                >
+                  {movement.shortLabel}
+                </span>
+                {movement.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid min-h-0 flex-1 grid-rows-2 gap-2">
+          {renderSection(
+            "media",
+            "Media Track",
+            `${mediaTrackLabel} - ${mediaTrackSubtitle}`,
+            orderedMediaTracks,
+            mediaClips,
+            isMediaPlaying,
+            onToggleMediaPlayback,
+          )}
+          {renderSection(
+            "animation",
+            "Animation Track",
+            animationClips.length
+              ? `${animationClips.length} shots - ${formatDuration(getTimelineEnd(animationClips))}`
+              : "Add a shot, then press play",
+            orderedAnimationTracks,
+            animationClips,
+            isAnimationPlaying,
+            onToggleAnimationPlayback,
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(
     DEFAULT_CANVAS_BACKGROUND_COLOR,
   );
   const [selectedDevice, setSelectedDevice] = useState(devices[0]);
-  const [websiteUrl, setWebsiteUrl] = useState("https://githance.in");
+  const [websiteUrl, setWebsiteUrl] = useState(DEFAULT_WEBSITE_URL);
+  const [screenContent, setScreenContent] = useState<ScreenContent>({
+    label: "Website",
+    type: "website",
+    url: DEFAULT_WEBSITE_URL,
+  });
   const [isRotateMode, setIsRotateMode] = useState(true);
+  const [isMediaPlaying, setIsMediaPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTransitionsOpen, setIsTransitionsOpen] = useState(false);
+  const [timelineTime, setTimelineTime] = useState(0);
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [isMasterPlaying, setIsMasterPlaying] = useState(false);
+  const [isAnimationTimelinePlaying, setIsAnimationTimelinePlaying] =
+    useState(false);
+  const [isMediaTimelinePlaying, setIsMediaTimelinePlaying] = useState(false);
   const [activeMovement, setActiveMovement] = useState<MovementPreset | null>(
     null,
   );
@@ -1373,7 +2123,6 @@ export default function Home() {
   const [isPointerOnDevice, setIsPointerOnDevice] = useState(false);
   const [isDraggingBackground, setIsDraggingBackground] = useState(false);
   const [isDraggingDevice, setIsDraggingDevice] = useState(false);
-  const [isTrackPlaying, setIsTrackPlaying] = useState(false);
   const [movementPlaySignal, setMovementPlaySignal] = useState(0);
   const [modelPositionOffset, setModelPositionOffset] = useState<
     [number, number, number]
@@ -1384,11 +2133,42 @@ export default function Home() {
     signal: 0,
     target: "scene",
   });
+  const [mediaTracks, setMediaTracks] = useState<TimelineTrack[]>([
+    {
+      id: DEFAULT_MEDIA_TRACK_ID,
+      kind: "media",
+      muted: false,
+      name: "Media 1",
+      order: 0,
+    },
+  ]);
+  const [animationTracks, setAnimationTracks] = useState<TimelineTrack[]>([
+    {
+      id: DEFAULT_ANIMATION_TRACK_ID,
+      kind: "animation",
+      muted: false,
+      name: "Animation 1",
+      order: 0,
+    },
+  ]);
+  const [mediaClips, setMediaClips] = useState<MediaTimelineClip[]>([
+    {
+      clipId: 1,
+      duration: DEFAULT_STILL_DURATION,
+      enabled: true,
+      kind: "website",
+      label: "Website",
+      start: 0,
+      trackId: DEFAULT_MEDIA_TRACK_ID,
+    },
+  ]);
   const [transitionTrack, setTransitionTrack] = useState<TransitionClip[]>([]);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
   const [recordedFileName, setRecordedFileName] = useState(
     "device-simulator-recording.webm",
   );
+  const [mediaDuration, setMediaDuration] = useState(0);
+  const [mediaPlaySignal, setMediaPlaySignal] = useState(0);
   const [recordingError, setRecordingError] = useState("");
   const [resetSignal, setResetSignal] = useState(0);
   const captureStreamRef = useRef<MediaStream | null>(null);
@@ -1406,6 +2186,16 @@ export default function Home() {
     position: [number, number, number];
   } | null>(null);
   const isPointerOnDeviceRef = useRef(false);
+  const mediaClipIdRef = useRef(1);
+  const playbackAnimationFrameRef = useRef<number | null>(null);
+  const playbackStateRef = useRef({
+    animation: false,
+    duration: DEFAULT_STILL_DURATION,
+    master: false,
+    media: false,
+    time: 0,
+  });
+  const screenMediaObjectUrlRef = useRef<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const transitionClipIdRef = useRef(0);
   const trackPlaybackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1415,18 +2205,179 @@ export default function Home() {
   const speedProfile = SPEED_PROFILES[1];
   const transitionTrackDuration = useMemo(
     () =>
-      transitionTrack.reduce(
-        (totalDuration, clip) =>
-          totalDuration + getMovementDuration(clip, motionProfile, speedProfile),
-        0,
-      ),
-    [motionProfile, speedProfile, transitionTrack],
+      getTimelineEnd(transitionTrack),
+    [transitionTrack],
   );
+  const mediaTrackDuration = useMemo(
+    () => getTimelineEnd(mediaClips),
+    [mediaClips],
+  );
+  const timelineDuration = Math.max(
+    DEFAULT_STILL_DURATION,
+    mediaTrackDuration,
+    transitionTrackDuration,
+  );
+  const timelineAnimationSample = useMemo(
+    () =>
+      sampleAnimationTimeline(
+        timelineTime,
+        transitionTrack,
+        animationTracks,
+        motionProfile,
+      ),
+    [animationTracks, motionProfile, timelineTime, transitionTrack],
+  );
+  const activeMediaClip = useMemo(() => {
+    const mutedTracks = getTrackMutedMap(mediaTracks);
+
+    return mediaClips.find(
+      (clip) =>
+        clip.enabled &&
+        !mutedTracks.get(clip.trackId) &&
+        timelineTime >= clip.start &&
+        timelineTime <= clip.start + clip.duration,
+    );
+  }, [mediaClips, mediaTracks, timelineTime]);
+  const mediaClipStart = activeMediaClip?.start ?? 0;
+  const mediaTimelineTime = activeMediaClip
+    ? timelineTime
+    : screenContent.type === "video"
+      ? 0
+      : timelineTime;
+  const timelineActiveAnimationClipId = useMemo(
+    () =>
+      transitionTrack.find(
+        (clip) =>
+          timelineTime >= clip.start && timelineTime <= clip.start + clip.duration,
+      )?.clipId ?? null,
+    [timelineTime, transitionTrack],
+  );
+  const mediaTrackLabel =
+    screenContent.type === "website"
+      ? "Website"
+      : screenContent.type === "image"
+        ? "Photo"
+        : "Video";
+  const mediaTrackSubtitle =
+    screenContent.type === "video"
+      ? formatMediaDuration(mediaDuration)
+      : screenContent.type === "image"
+        ? "Still"
+        : "Live page";
   const controlsEnabled = false;
 
   useEffect(() => {
     isPointerOnDeviceRef.current = isPointerOnDevice;
   }, [isPointerOnDevice]);
+
+  useEffect(() => {
+    setMediaClips((currentClips) => {
+      const nextDuration =
+        screenContent.type === "video"
+          ? Math.max(mediaDuration || DEFAULT_STILL_DURATION, MIN_CLIP_DURATION)
+          : DEFAULT_STILL_DURATION;
+      const [firstClip] = currentClips;
+
+      if (!firstClip) {
+        mediaClipIdRef.current += 1;
+
+        return [
+          {
+            clipId: mediaClipIdRef.current,
+            duration: nextDuration,
+            enabled: true,
+            kind: screenContent.type,
+            label: screenContent.label,
+            start: 0,
+            trackId: mediaTracks[0]?.id ?? DEFAULT_MEDIA_TRACK_ID,
+          },
+        ];
+      }
+
+      return [
+        {
+          ...firstClip,
+          duration: nextDuration,
+          kind: screenContent.type,
+          label: screenContent.label,
+        },
+        ...currentClips.slice(1),
+      ];
+    });
+  }, [mediaDuration, mediaTracks, screenContent]);
+
+  useEffect(() => {
+    playbackStateRef.current = {
+      animation: isAnimationTimelinePlaying,
+      duration: timelineDuration,
+      master: isMasterPlaying,
+      media: isMediaTimelinePlaying,
+      time: timelineTime,
+    };
+  }, [
+    isAnimationTimelinePlaying,
+    isMasterPlaying,
+    isMediaTimelinePlaying,
+    timelineDuration,
+    timelineTime,
+  ]);
+
+  const revokeUploadedScreenMedia = () => {
+    if (screenMediaObjectUrlRef.current) {
+      URL.revokeObjectURL(screenMediaObjectUrlRef.current);
+      screenMediaObjectUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    const shouldPlay =
+      isMasterPlaying || isAnimationTimelinePlaying || isMediaTimelinePlaying;
+
+    if (!shouldPlay) {
+      if (playbackAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(playbackAnimationFrameRef.current);
+        playbackAnimationFrameRef.current = null;
+      }
+      return;
+    }
+
+    let previousFrameTime = performance.now();
+
+    const tick = (frameTime: number) => {
+      const deltaSeconds = Math.min(
+        Math.max((frameTime - previousFrameTime) / 1000, 0),
+        0.08,
+      );
+
+      previousFrameTime = frameTime;
+
+      setTimelineTime((currentTime) => {
+        const nextTime = Math.min(
+          currentTime + deltaSeconds,
+          playbackStateRef.current.duration,
+        );
+
+        if (nextTime >= playbackStateRef.current.duration) {
+          setIsMasterPlaying(false);
+          setIsAnimationTimelinePlaying(false);
+          setIsMediaTimelinePlaying(false);
+        }
+
+        return nextTime;
+      });
+
+      playbackAnimationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    playbackAnimationFrameRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (playbackAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(playbackAnimationFrameRef.current);
+        playbackAnimationFrameRef.current = null;
+      }
+    };
+  }, [isAnimationTimelinePlaying, isMasterPlaying, isMediaTimelinePlaying]);
 
   const stopCaptureStream = () => {
     if (recordingAnimationFrameRef.current !== null) {
@@ -1721,11 +2672,17 @@ export default function Home() {
         clearTimeout(trackPlaybackTimeoutRef.current);
       }
 
+      if (playbackAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(playbackAnimationFrameRef.current);
+      }
+
       stopCaptureStream();
 
       if (recordedVideoUrlRef.current) {
         URL.revokeObjectURL(recordedVideoUrlRef.current);
       }
+
+      revokeUploadedScreenMedia();
     },
     [],
   );
@@ -1733,6 +2690,9 @@ export default function Home() {
   const resetInteractiveView = () => {
     backgroundDragStartRef.current = null;
     isPointerOnDeviceRef.current = false;
+    setIsMasterPlaying(false);
+    setIsAnimationTimelinePlaying(false);
+    setIsMediaTimelinePlaying(false);
     setIsDraggingBackground(false);
     setIsDraggingDevice(false);
     setIsPointerOnDevice(false);
@@ -1754,7 +2714,8 @@ export default function Home() {
     }
 
     setActiveTrackClipId(null);
-    setIsTrackPlaying(false);
+    setIsAnimationTimelinePlaying(false);
+    setIsMasterPlaying(false);
   };
 
   const playMovement = (movement: MovementPreset) => {
@@ -1762,64 +2723,236 @@ export default function Home() {
     setMovementPlaySignal((currentSignal) => currentSignal + 1);
   };
 
-  const playTransitionTrack = () => {
-    if (!transitionTrack.length) {
-      return;
-    }
-
-    stopTransitionTrack();
-    setIsTrackPlaying(true);
-
-    const playClipAtIndex = (clipIndex: number) => {
-      const clip = transitionTrack[clipIndex];
-
-      if (!clip) {
-        setActiveTrackClipId(null);
-        setIsTrackPlaying(false);
-        trackPlaybackTimeoutRef.current = null;
-        return;
-      }
-
-      setActiveTrackClipId(clip.clipId);
-      playMovement(clip);
-      trackPlaybackTimeoutRef.current = setTimeout(
-        () => playClipAtIndex(clipIndex + 1),
-        (getMovementDuration(clip, motionProfile, speedProfile) + 0.25) *
-        1000,
-      );
-    };
-
-    playClipAtIndex(0);
-  };
-
   const playTrackClip = (clip: TransitionClip) => {
     stopTransitionTrack();
     setActiveTrackClipId(clip.clipId);
+    setTimelineTime(clip.start);
     playMovement(clip);
-    trackPlaybackTimeoutRef.current = setTimeout(() => {
-      setActiveTrackClipId(null);
-      trackPlaybackTimeoutRef.current = null;
-    }, getMovementDuration(clip, motionProfile, speedProfile) * 1000);
   };
 
   const addMovementToTrack = (movement: MovementPreset) => {
     setTransitionTrack((currentTrack) => {
       transitionClipIdRef.current += 1;
+      const duration = getMovementDuration(movement, motionProfile, speedProfile);
+      const trackId =
+        getOrderedTracks(animationTracks, "animation")[0]?.id ??
+        DEFAULT_ANIMATION_TRACK_ID;
 
       return [
         ...currentTrack,
         {
           ...movement,
           clipId: transitionClipIdRef.current,
+          duration,
+          enabled: true,
+          start: snapTimelineTime(getTimelineEnd(currentTrack)),
+          trackId,
         },
       ];
     });
-    playMovement(movement);
   };
 
   const clearTransitionTrack = () => {
     stopTransitionTrack();
     setTransitionTrack([]);
+  };
+
+  const seekTimeline = (time: number) => {
+    const nextTime = MathUtils.clamp(time, 0, timelineDuration);
+
+    setTimelineTime(nextTime);
+  };
+
+  const toggleMasterPlayback = () => {
+    const shouldPlay = !isMasterPlaying;
+
+    setIsMasterPlaying(shouldPlay);
+    setIsAnimationTimelinePlaying(shouldPlay);
+    setIsMediaTimelinePlaying(shouldPlay);
+    setIsMediaPlaying(shouldPlay && screenContent.type === "video");
+    setMediaPlaySignal((currentSignal) => currentSignal + 1);
+  };
+
+  const toggleAnimationTimelinePlayback = () => {
+    setIsAnimationTimelinePlaying((isPlaying) => !isPlaying);
+    setIsMasterPlaying(false);
+  };
+
+  const toggleMediaTimelinePlayback = () => {
+    const shouldPlay = !isMediaTimelinePlaying;
+
+    setIsMediaTimelinePlaying(shouldPlay);
+    setIsMediaPlaying(shouldPlay && screenContent.type === "video");
+    setIsMasterPlaying(false);
+    setMediaPlaySignal((currentSignal) => currentSignal + 1);
+  };
+
+  const updateTracks = (
+    kind: TimelineTrackKind,
+    updater: (tracks: TimelineTrack[]) => TimelineTrack[],
+  ) => {
+    if (kind === "media") {
+      setMediaTracks(updater);
+      return;
+    }
+
+    setAnimationTracks(updater);
+  };
+
+  const addTimelineTrack = (kind: TimelineTrackKind) => {
+    updateTracks(kind, (currentTracks) => [
+      ...currentTracks,
+      {
+        id: `${kind}-track-${Date.now()}`,
+        kind,
+        muted: false,
+        name: `${kind === "media" ? "Media" : "Animation"} ${currentTracks.length + 1}`,
+        order: currentTracks.length,
+      },
+    ]);
+  };
+
+  const duplicateTimelineTrack = (kind: TimelineTrackKind, track: TimelineTrack) => {
+    const nextTrackId = `${kind}-track-${Date.now()}`;
+
+    updateTracks(kind, (currentTracks) => [
+      ...currentTracks,
+      {
+        ...track,
+        id: nextTrackId,
+        muted: false,
+        name: `${track.name} Copy`,
+        order: currentTracks.length,
+      },
+    ]);
+
+    if (kind === "animation") {
+      setTransitionTrack((currentClips) => [
+        ...currentClips,
+        ...currentClips
+          .filter((clip) => clip.trackId === track.id)
+          .map((clip) => {
+            transitionClipIdRef.current += 1;
+
+            return {
+              ...clip,
+              clipId: transitionClipIdRef.current,
+              start: snapTimelineTime(clip.start + clip.duration),
+              trackId: nextTrackId,
+            };
+          }),
+      ]);
+      return;
+    }
+
+    setMediaClips((currentClips) => [
+      ...currentClips,
+      ...currentClips
+        .filter((clip) => clip.trackId === track.id)
+        .map((clip) => {
+          mediaClipIdRef.current += 1;
+
+          return {
+            ...clip,
+            clipId: mediaClipIdRef.current,
+            start: snapTimelineTime(clip.start + clip.duration),
+            trackId: nextTrackId,
+          };
+        }),
+    ]);
+  };
+
+  const deleteTimelineTrack = (kind: TimelineTrackKind, trackId: string) => {
+    updateTracks(kind, (currentTracks) => {
+      if (currentTracks.length <= 1) {
+        return currentTracks;
+      }
+
+      return currentTracks
+        .filter((track) => track.id !== trackId)
+        .map((track, order) => ({ ...track, order }));
+    });
+
+    if (kind === "animation") {
+      setTransitionTrack((currentClips) =>
+        currentClips.filter((clip) => clip.trackId !== trackId),
+      );
+      return;
+    }
+
+    setMediaClips((currentClips) =>
+      currentClips.filter((clip) => clip.trackId !== trackId),
+    );
+  };
+
+  const toggleTimelineTrackMute = (kind: TimelineTrackKind, trackId: string) => {
+    updateTracks(kind, (currentTracks) =>
+      currentTracks.map((track) =>
+        track.id === trackId ? { ...track, muted: !track.muted } : track,
+      ),
+    );
+  };
+
+  const reorderTimelineTrack = (
+    kind: TimelineTrackKind,
+    trackId: string,
+    direction: -1 | 1,
+  ) => {
+    updateTracks(kind, (currentTracks) => {
+      const orderedTracks = getOrderedTracks(currentTracks, kind);
+      const currentIndex = orderedTracks.findIndex((track) => track.id === trackId);
+      const nextIndex = MathUtils.clamp(
+        currentIndex + direction,
+        0,
+        orderedTracks.length - 1,
+      );
+
+      if (currentIndex === -1 || currentIndex === nextIndex) {
+        return currentTracks;
+      }
+
+      const [movedTrack] = orderedTracks.splice(currentIndex, 1);
+
+      orderedTracks.splice(nextIndex, 0, movedTrack);
+
+      return orderedTracks.map((track, order) => ({ ...track, order }));
+    });
+  };
+
+  const updateTimelineClip = (
+    kind: TimelineTrackKind,
+    clipId: number,
+    updater: (
+      clip: TransitionClip | MediaTimelineClip,
+    ) => TransitionClip | MediaTimelineClip,
+  ) => {
+    if (kind === "animation") {
+      setTransitionTrack((currentClips) =>
+        currentClips.map((clip) =>
+          clip.clipId === clipId ? (updater(clip) as TransitionClip) : clip,
+        ),
+      );
+      return;
+    }
+
+    setMediaClips((currentClips) =>
+      currentClips.map((clip) =>
+        clip.clipId === clipId ? (updater(clip) as MediaTimelineClip) : clip,
+      ),
+    );
+  };
+
+  const deleteTimelineClip = (kind: TimelineTrackKind, clipId: number) => {
+    if (kind === "animation") {
+      setTransitionTrack((currentClips) =>
+        currentClips.filter((clip) => clip.clipId !== clipId),
+      );
+      return;
+    }
+
+    setMediaClips((currentClips) =>
+      currentClips.filter((clip) => clip.clipId !== clipId),
+    );
   };
 
   const handleSelectDevice = (device: (typeof devices)[number]) => {
@@ -1834,7 +2967,47 @@ export default function Home() {
   };
 
   const handleWebsiteChange = (url: string) => {
+    revokeUploadedScreenMedia();
     setWebsiteUrl(url);
+    setScreenContent({
+      label: "Website",
+      type: "website",
+      url,
+    });
+    setIsMediaPlaying(false);
+    setIsMediaTimelinePlaying(false);
+    setIsMasterPlaying(false);
+    setMediaDuration(0);
+  };
+
+  const handleScreenMediaUpload = (file: File) => {
+    const isVideoFile = file.type.startsWith("video/");
+    const isImageFile = file.type.startsWith("image/");
+
+    if (!isVideoFile && !isImageFile) {
+      return;
+    }
+
+    revokeUploadedScreenMedia();
+
+    const mediaUrl = URL.createObjectURL(file);
+
+    screenMediaObjectUrlRef.current = mediaUrl;
+    setScreenContent({
+      label: file.name,
+      mimeType: file.type,
+      type: isVideoFile ? "video" : "image",
+      url: mediaUrl,
+    });
+    setIsMediaPlaying(false);
+    setIsMediaTimelinePlaying(false);
+    setIsMasterPlaying(false);
+    setMediaDuration(0);
+    setMediaPlaySignal((currentSignal) => currentSignal + 1);
+  };
+
+  const handleUseWebsiteContent = () => {
+    handleWebsiteChange(websiteUrl);
   };
 
   const handleDeviceDragEnd = useCallback(() => {
@@ -1934,20 +3107,21 @@ export default function Home() {
       const deltaX = MathUtils.clamp(event.deltaX, -140, 140);
       const deltaY = MathUtils.clamp(event.deltaY, -140, 140);
 
-      if (!isPointerOnDevice) {
-        setModelPositionOffset((currentPosition) =>
-          clampModelPosition([
-            currentPosition[0],
-            currentPosition[1],
-            currentPosition[2] - deltaY * MODEL_DEPTH_WHEEL_SENSITIVITY,
-          ]),
-        );
+      setModelPositionOffset((currentPosition) =>
+        clampModelPosition([
+          currentPosition[0],
+          currentPosition[1],
+          currentPosition[2] - deltaY * MODEL_DEPTH_WHEEL_SENSITIVITY,
+        ]),
+      );
+
+      if (!isPointerOnDevice || Math.abs(deltaX) < 2) {
         return;
       }
 
       setGestureImpulse((currentImpulse) => ({
         deltaX,
-        deltaY,
+        deltaY: 0,
         signal: currentImpulse.signal + 1,
         target: "device",
       }));
@@ -1962,7 +3136,11 @@ export default function Home() {
         onCanvasBackgroundColorChange={setCanvasBackgroundColor}
         selectedDeviceId={selectedDevice.id}
         onSelectDevice={handleSelectDevice}
+        screenContentName={screenContent.label}
+        screenContentType={screenContent.type}
         websiteUrl={websiteUrl}
+        onMediaUpload={handleScreenMediaUpload}
+        onUseWebsiteContent={handleUseWebsiteContent}
         onWebsiteChange={handleWebsiteChange}
       />
       <section
@@ -2021,6 +3199,7 @@ export default function Home() {
               movementPlaySignal={movementPlaySignal}
               resetSignal={resetSignal}
               speedProfile={speedProfile}
+              timelineCameraOffset={timelineAnimationSample?.camera ?? [0, 0, 0]}
             />
 
             <Suspense fallback={null}>
@@ -2030,18 +3209,30 @@ export default function Home() {
                 device={selectedDevice}
                 gestureImpulse={gestureImpulse}
                 isDraggingDevice={isDraggingDevice}
+                isMediaPlaying={
+                  isMediaPlaying &&
+                  !!activeMediaClip &&
+                  screenContent.type === "video"
+                }
                 isPointerOnDevice={isPointerOnDevice}
                 movementPlaySignal={movementPlaySignal}
                 motionProfile={motionProfile}
-                websiteUrl={websiteUrl}
                 isRotateMode={isRotateMode}
+                mediaClipStart={mediaClipStart}
+                mediaTimelineTime={mediaTimelineTime}
+                mediaPlaySignal={mediaPlaySignal}
                 modelPositionOffset={modelPositionOffset}
                 resetSignal={resetSignal}
+                screenContent={screenContent}
                 speedProfile={speedProfile}
+                timelineSample={timelineAnimationSample}
                 onDeviceDragEnd={handleDeviceDragEnd}
                 onDeviceDragStart={handleDeviceDragStart}
                 onDeviceHoverEnd={handleDeviceHoverEnd}
                 onDeviceHoverStart={handleDeviceHoverStart}
+                onMediaDurationChange={setMediaDuration}
+                onMediaEnded={() => setIsMediaPlaying(false)}
+                onMediaPlayStateChange={setIsMediaPlaying}
               />
             </Suspense>
             <OrbitControls
@@ -2061,128 +3252,51 @@ export default function Home() {
             />
           </Canvas>
         </div>
-        <div className="h-32 shrink-0 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100">
-          <div className="flex h-full flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!transitionTrack.length}
-                  onClick={
-                    isTrackPlaying ? stopTransitionTrack : playTransitionTrack
-                  }
-                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-md border transition ${transitionTrack.length
-                    ? "border-sky-400 bg-sky-400 text-zinc-950 hover:bg-sky-300"
-                    : "cursor-not-allowed border-zinc-800 bg-zinc-900 text-zinc-600"
-                    }`}
-                  title={isTrackPlaying ? "Stop track" : "Play track"}
-                >
-                  <PlayTrackIcon isPlaying={isTrackPlaying} />
-                </button>
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Product Timeline
-                  </p>
-                  <p className="text-[11px] text-zinc-500">
-                    {transitionTrack.length
-                      ? `${transitionTrack.length} shots - ${formatDuration(
-                        transitionTrackDuration,
-                      )}`
-                      : "Add a shot, then press play"}
-                  </p>
-                </div>
-                {isRecording ? (
-                  <span className="rounded border border-red-500/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-red-200">
-                    Rec
-                  </span>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsTransitionsOpen((isOpen) => !isOpen)}
-                  className={`h-8 rounded-md border px-3 text-xs font-semibold transition ${isTransitionsOpen
-                    ? "border-sky-400 bg-sky-400 text-zinc-950"
-                    : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
-                    }`}
-                >
-                  Add Shot
-                </button>
-                {transitionTrack.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={clearTransitionTrack}
-                    className="h-8 rounded-md border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-100"
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {isTransitionsOpen ? (
-              <div className="flex h-8 items-center gap-1 overflow-x-auto">
-                {MOVEMENT_PRESETS.map((movement) => (
-                  <button
-                    key={movement.id}
-                    type="button"
-                    onClick={() => addMovementToTrack(movement)}
-                    className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs font-semibold text-zinc-200 transition hover:border-sky-400 hover:bg-zinc-800"
-                  >
-                    <span
-                      className={`grid h-5 w-5 place-items-center rounded text-[9px] font-bold ${movement.colorClass}`}
-                    >
-                      {movement.shortLabel}
-                    </span>
-                    {movement.name}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <div className="flex min-h-0 flex-1 items-center gap-2 overflow-x-auto rounded-md border border-zinc-800 bg-zinc-900/70 px-2">
-              {transitionTrack.length > 0 ? (
-                transitionTrack.map((clip, index) => (
-                  <button
-                    key={clip.clipId}
-                    type="button"
-                    onClick={() => playTrackClip(clip)}
-                    className={`flex h-11 min-w-40 items-center gap-2 rounded border px-2 text-left transition ${activeTrackClipId === clip.clipId
-                      ? "border-sky-400 bg-zinc-800"
-                      : "border-zinc-700 bg-zinc-950 hover:border-sky-400"
-                      }`}
-                  >
-                    <span
-                      className={`grid h-7 w-7 shrink-0 place-items-center rounded text-[10px] font-bold ${clip.colorClass}`}
-                    >
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-semibold">
-                        {clip.name}
-                      </span>
-                      <span className="block text-[11px] text-zinc-500">
-                        {formatDuration(
-                          getMovementDuration(
-                            clip,
-                            motionProfile,
-                            speedProfile,
-                          ),
-                        )}
-                      </span>
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsTransitionsOpen(true)}
-                  className="flex h-11 min-w-48 items-center rounded-md border border-dashed border-zinc-700 px-3 text-xs font-semibold text-zinc-500 transition hover:border-zinc-500 hover:text-zinc-300"
-                >
-                  Add product movement
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <TimelineEditor
+          activeAnimationClipId={activeTrackClipId ?? timelineActiveAnimationClipId}
+          animationClips={transitionTrack}
+          animationTracks={animationTracks}
+          isAnimationPlaying={isAnimationTimelinePlaying}
+          isMasterPlaying={isMasterPlaying}
+          isMediaPlaying={isMediaTimelinePlaying}
+          isPresetListOpen={isTransitionsOpen}
+          mediaClips={mediaClips}
+          mediaTrackLabel={mediaTrackLabel}
+          mediaTrackSubtitle={mediaTrackSubtitle}
+          mediaTracks={mediaTracks}
+          timelineDuration={timelineDuration}
+          timelineTime={timelineTime}
+          timelineZoom={timelineZoom}
+          onAddMovementToTrack={addMovementToTrack}
+          onAddTrack={addTimelineTrack}
+          onClearAnimations={clearTransitionTrack}
+          onClipDelete={deleteTimelineClip}
+          onClipSelect={playTrackClip}
+          onClipUpdate={(kind, clipId, update) =>
+            updateTimelineClip(kind, clipId, (clip) => ({
+              ...clip,
+              duration:
+                update.duration === undefined
+                  ? clip.duration
+                  : Math.max(MIN_CLIP_DURATION, update.duration),
+              start:
+                update.start === undefined
+                  ? clip.start
+                  : snapTimelineTime(update.start),
+              trackId: update.trackId ?? clip.trackId,
+            }))
+          }
+          onDeleteTrack={deleteTimelineTrack}
+          onDuplicateTrack={duplicateTimelineTrack}
+          onMuteTrack={toggleTimelineTrackMute}
+          onReorderTrack={reorderTimelineTrack}
+          onSeek={seekTimeline}
+          onTimelineZoomChange={setTimelineZoom}
+          onToggleAnimationPlayback={toggleAnimationTimelinePlayback}
+          onToggleMasterPlayback={toggleMasterPlayback}
+          onToggleMediaPlayback={toggleMediaTimelinePlayback}
+          onTogglePresetList={() => setIsTransitionsOpen((isOpen) => !isOpen)}
+        />
       </section>
       <aside className="flex h-screen w-16 shrink-0 flex-col items-center gap-3 border-l border-zinc-800 bg-zinc-950 py-4 text-zinc-100">
         <ToolButton
