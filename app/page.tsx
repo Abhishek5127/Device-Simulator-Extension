@@ -42,8 +42,12 @@ const DEFAULT_WEBSITE_URL = "https://githance.in";
 const DEFAULT_ANIMATION_TRACK_ID = "animation-track-1";
 const DEFAULT_MEDIA_TRACK_ID = "media-track-1";
 const DEFAULT_STILL_DURATION = 5;
+const DEFAULT_TIMELINE_PANEL_HEIGHT = 288;
+const MAX_TIMELINE_PANEL_HEIGHT = 520;
+const MIN_TIMELINE_PANEL_HEIGHT = 160;
 const MIN_CLIP_DURATION = 0.25;
 const MODEL_DEPTH_WHEEL_SENSITIVITY = 0.0015;
+const MODEL_GESTURE_ZOOM_SENSITIVITY = 0.45;
 const MODEL_DEPTH_LIMIT = 1.25;
 const MODEL_POSITION_DRAG_SENSITIVITY = 0.003;
 const MODEL_POSITION_LIMIT = 1.75;
@@ -1063,6 +1067,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
           backfaceVisibility: "hidden",
           clipPath: `inset(0 round ${screen.radius}px)`,
           contain: "paint",
+          cursor: isRotateMode ? "grab" : "auto",
           isolation: "isolate",
           pointerEvents: "auto",
           transform: "translate3d(0, 0, 0)",
@@ -1672,6 +1677,7 @@ function TimelineEditor({
   mediaTrackSubtitle,
   mediaTracks,
   timelineDuration,
+  timelinePanelHeight,
   timelineTime,
   timelineZoom,
   onAddMovementToTrack,
@@ -1685,6 +1691,7 @@ function TimelineEditor({
   onMuteTrack,
   onReorderTrack,
   onSeek,
+  onTimelinePanelHeightChange,
   onTimelineZoomChange,
   onToggleAnimationPlayback,
   onToggleMasterPlayback,
@@ -1703,6 +1710,7 @@ function TimelineEditor({
   mediaTrackSubtitle: string;
   mediaTracks: TimelineTrack[];
   timelineDuration: number;
+  timelinePanelHeight: number;
   timelineTime: number;
   timelineZoom: number;
   onAddMovementToTrack: (movement: MovementPreset) => void;
@@ -1724,6 +1732,7 @@ function TimelineEditor({
     direction: -1 | 1,
   ) => void;
   onSeek: (time: number) => void;
+  onTimelinePanelHeightChange: (height: number) => void;
   onTimelineZoomChange: (zoom: number) => void;
   onToggleAnimationPlayback: () => void;
   onToggleMasterPlayback: () => void;
@@ -1732,6 +1741,10 @@ function TimelineEditor({
 }) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
   const [clipEdit, setClipEdit] = useState<ClipEditState | null>(null);
+  const panelResizeRef = useRef<{
+    initialHeight: number;
+    pointerY: number;
+  } | null>(null);
   const pixelsPerSecond = TIMELINE_BASE_PIXELS_PER_SECOND * timelineZoom;
   const timelineWidth = Math.max(900, timelineDuration * pixelsPerSecond + 120);
   const playheadX = timelineTime * pixelsPerSecond;
@@ -1758,6 +1771,20 @@ function TimelineEditor({
   };
 
   const updateClipEdit = (event: React.PointerEvent<HTMLDivElement>) => {
+    const panelResize = panelResizeRef.current;
+
+    if (panelResize) {
+      event.preventDefault();
+      onTimelinePanelHeightChange(
+        MathUtils.clamp(
+          panelResize.initialHeight - (event.clientY - panelResize.pointerY),
+          MIN_TIMELINE_PANEL_HEIGHT,
+          MAX_TIMELINE_PANEL_HEIGHT,
+        ),
+      );
+      return;
+    }
+
     if (!clipEdit) {
       return;
     }
@@ -1796,6 +1823,7 @@ function TimelineEditor({
 
   const endClipEdit = (event: React.PointerEvent<HTMLDivElement>) => {
     setClipEdit(null);
+    panelResizeRef.current = null;
 
     if (timelineRootRef.current?.hasPointerCapture(event.pointerId)) {
       timelineRootRef.current.releasePointerCapture(event.pointerId);
@@ -1996,11 +2024,24 @@ function TimelineEditor({
   return (
     <div
       ref={timelineRootRef}
-      className="h-72 shrink-0 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
+      className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
+      style={{ height: timelinePanelHeight }}
       onPointerMove={updateClipEdit}
       onPointerUp={endClipEdit}
     >
       <div className="flex h-full flex-col gap-2">
+        <div
+          className="-mx-3 -mt-2 h-2 cursor-row-resize border-b border-zinc-900 bg-zinc-950 transition hover:bg-sky-400/30"
+          title="Drag to resize timeline"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            panelResizeRef.current = {
+              initialHeight: timelinePanelHeight,
+              pointerY: event.clientY,
+            };
+            timelineRootRef.current?.setPointerCapture(event.pointerId);
+          }}
+        />
         <div className="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/80 px-2 py-2">
           <button
             type="button"
@@ -2043,6 +2084,21 @@ function TimelineEditor({
               step={0.05}
               value={timelineZoom}
               onChange={(event) => onTimelineZoomChange(Number(event.target.value))}
+              className="w-28 accent-sky-400"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Panel
+            <input
+              aria-label="Timeline panel height"
+              type="range"
+              min={MIN_TIMELINE_PANEL_HEIGHT}
+              max={MAX_TIMELINE_PANEL_HEIGHT}
+              step={4}
+              value={timelinePanelHeight}
+              onChange={(event) =>
+                onTimelinePanelHeightChange(Number(event.target.value))
+              }
               className="w-28 accent-sky-400"
             />
           </label>
@@ -2110,6 +2166,9 @@ export default function Home() {
   const [isTransitionsOpen, setIsTransitionsOpen] = useState(false);
   const [timelineTime, setTimelineTime] = useState(0);
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelinePanelHeight, setTimelinePanelHeight] = useState(
+    DEFAULT_TIMELINE_PANEL_HEIGHT,
+  );
   const [isMasterPlaying, setIsMasterPlaying] = useState(false);
   const [isAnimationTimelinePlaying, setIsAnimationTimelinePlaying] =
     useState(false);
@@ -2197,6 +2256,7 @@ export default function Home() {
   });
   const screenMediaObjectUrlRef = useRef<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const stageGestureScaleRef = useRef(1);
   const transitionClipIdRef = useRef(0);
   const trackPlaybackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -2265,6 +2325,17 @@ export default function Home() {
         ? "Still"
         : "Live page";
   const controlsEnabled = false;
+  const stageCursor = isRotateMode
+    ? isDraggingDevice
+      ? "grabbing"
+      : isPointerOnDevice
+        ? "grab"
+        : isDraggingBackground
+          ? "move"
+          : "default"
+    : isPointerOnDevice
+      ? "grab"
+      : "default";
 
   useEffect(() => {
     isPointerOnDeviceRef.current = isPointerOnDevice;
@@ -2378,6 +2449,48 @@ export default function Home() {
       }
     };
   }, [isAnimationTimelinePlaying, isMasterPlaying, isMediaTimelinePlaying]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+
+    if (!stage) {
+      return;
+    }
+
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      stageGestureScaleRef.current =
+        (event as Event & { scale?: number }).scale ?? 1;
+    };
+
+    const handleGestureChange = (event: Event) => {
+      event.preventDefault();
+
+      const nextScale = (event as Event & { scale?: number }).scale ?? 1;
+      const scaleDelta = nextScale - stageGestureScaleRef.current;
+      stageGestureScaleRef.current = nextScale;
+
+      setModelPositionOffset((currentPosition) =>
+        clampModelPosition([
+          currentPosition[0],
+          currentPosition[1],
+          currentPosition[2] + scaleDelta * MODEL_GESTURE_ZOOM_SENSITIVITY,
+        ]),
+      );
+    };
+
+    stage.addEventListener("gesturestart", handleGestureStart, {
+      passive: false,
+    });
+    stage.addEventListener("gesturechange", handleGestureChange, {
+      passive: false,
+    });
+
+    return () => {
+      stage.removeEventListener("gesturestart", handleGestureStart);
+      stage.removeEventListener("gesturechange", handleGestureChange);
+    };
+  }, []);
 
   const stopCaptureStream = () => {
     if (recordingAnimationFrameRef.current !== null) {
@@ -3099,23 +3212,33 @@ export default function Home() {
 
   const handleStageWheel = useCallback(
     (event: React.WheelEvent<HTMLElement>) => {
-      if (!isRotateMode) {
+      const isPinchZoom = event.ctrlKey;
+
+      if (!isRotateMode && isPointerOnDevice && !isPinchZoom) {
         return;
       }
 
       event.preventDefault();
       const deltaX = MathUtils.clamp(event.deltaX, -140, 140);
       const deltaY = MathUtils.clamp(event.deltaY, -140, 140);
+      const zoomSensitivity = isPinchZoom
+        ? MODEL_DEPTH_WHEEL_SENSITIVITY * 3.2
+        : MODEL_DEPTH_WHEEL_SENSITIVITY;
 
       setModelPositionOffset((currentPosition) =>
         clampModelPosition([
           currentPosition[0],
           currentPosition[1],
-          currentPosition[2] - deltaY * MODEL_DEPTH_WHEEL_SENSITIVITY,
+          currentPosition[2] - deltaY * zoomSensitivity,
         ]),
       );
 
-      if (!isPointerOnDevice || Math.abs(deltaX) < 2) {
+      if (
+        isPinchZoom ||
+        !isRotateMode ||
+        !isPointerOnDevice ||
+        Math.abs(deltaX) < 2
+      ) {
         return;
       }
 
@@ -3150,6 +3273,7 @@ export default function Home() {
         <div
           ref={stageRef}
           className="relative min-h-0 flex-1 [&_canvas]:h-full [&_canvas]:w-full"
+          style={{ cursor: stageCursor, touchAction: "none" }}
           onPointerDown={handleStagePointerDown}
           onPointerLeave={handleStagePointerEnd}
           onPointerMove={handleStagePointerMove}
@@ -3265,6 +3389,7 @@ export default function Home() {
           mediaTrackSubtitle={mediaTrackSubtitle}
           mediaTracks={mediaTracks}
           timelineDuration={timelineDuration}
+          timelinePanelHeight={timelinePanelHeight}
           timelineTime={timelineTime}
           timelineZoom={timelineZoom}
           onAddMovementToTrack={addMovementToTrack}
@@ -3291,6 +3416,7 @@ export default function Home() {
           onMuteTrack={toggleTimelineTrackMute}
           onReorderTrack={reorderTimelineTrack}
           onSeek={seekTimeline}
+          onTimelinePanelHeightChange={setTimelinePanelHeight}
           onTimelineZoomChange={setTimelineZoom}
           onToggleAnimationPlayback={toggleAnimationTimelinePlayback}
           onToggleMasterPlayback={toggleMasterPlayback}
