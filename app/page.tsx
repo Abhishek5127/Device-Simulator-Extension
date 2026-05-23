@@ -46,7 +46,8 @@ const DEFAULT_TIMELINE_PANEL_HEIGHT = 288;
 const MAX_TIMELINE_PANEL_HEIGHT = 520;
 const MIN_TIMELINE_PANEL_HEIGHT = 160;
 const MIN_CLIP_DURATION = 0.25;
-const MODEL_DEPTH_WHEEL_SENSITIVITY = 0.0015;
+const MODEL_CANVAS_PINCH_ZOOM_SENSITIVITY = 0.012;
+const MODEL_CANVAS_WHEEL_ZOOM_SENSITIVITY = 0.0028;
 const MODEL_GESTURE_ZOOM_SENSITIVITY = 0.45;
 const MODEL_DEPTH_LIMIT = 1.25;
 const MODEL_POSITION_DRAG_SENSITIVITY = 0.003;
@@ -793,6 +794,18 @@ const getOrderedTracks = (tracks: TimelineTrack[], kind: TimelineTrackKind) =>
 
 const getTrackMutedMap = (tracks: TimelineTrack[]) =>
   new Map(tracks.map((track) => [track.id, track.muted]));
+
+const normalizeWheelDelta = (delta: number, deltaMode: number) => {
+  if (deltaMode === 1) {
+    return delta * 16;
+  }
+
+  if (deltaMode === 2) {
+    return delta * 240;
+  }
+
+  return delta;
+};
 
 const sampleAnimationTimeline = (
   time: number,
@@ -2412,6 +2425,7 @@ export default function Home() {
     position: [number, number, number];
   } | null>(null);
   const isPointerOnDeviceRef = useRef(false);
+  const isRotateModeRef = useRef(isRotateMode);
   const mediaClipIdRef = useRef(1);
   const playbackAnimationFrameRef = useRef<number | null>(null);
   const playbackStateRef = useRef({
@@ -2507,6 +2521,10 @@ export default function Home() {
   useEffect(() => {
     isPointerOnDeviceRef.current = isPointerOnDevice;
   }, [isPointerOnDevice]);
+
+  useEffect(() => {
+    isRotateModeRef.current = isRotateMode;
+  }, [isRotateMode]);
 
   useEffect(() => {
     setMediaClips((currentClips) => {
@@ -2656,6 +2674,73 @@ export default function Home() {
     return () => {
       stage.removeEventListener("gesturestart", handleGestureStart);
       stage.removeEventListener("gesturechange", handleGestureChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+
+    if (!stage) {
+      return;
+    }
+
+    const handleNativeWheel = (event: WheelEvent) => {
+      const isPinchZoom = event.ctrlKey;
+      const shouldZoomModel =
+        isPinchZoom ||
+        isRotateModeRef.current ||
+        !isPointerOnDeviceRef.current;
+
+      if (!shouldZoomModel) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const deltaX = MathUtils.clamp(
+        normalizeWheelDelta(event.deltaX, event.deltaMode),
+        -220,
+        220,
+      );
+      const deltaY = MathUtils.clamp(
+        normalizeWheelDelta(event.deltaY, event.deltaMode),
+        -220,
+        220,
+      );
+      const zoomSensitivity = isPinchZoom
+        ? MODEL_CANVAS_PINCH_ZOOM_SENSITIVITY
+        : MODEL_CANVAS_WHEEL_ZOOM_SENSITIVITY;
+
+      setModelPositionOffset((currentPosition) =>
+        clampModelPosition([
+          currentPosition[0],
+          currentPosition[1],
+          currentPosition[2] - deltaY * zoomSensitivity,
+        ]),
+      );
+
+      if (
+        isPinchZoom ||
+        !isRotateModeRef.current ||
+        !isPointerOnDeviceRef.current ||
+        Math.abs(deltaX) < 2
+      ) {
+        return;
+      }
+
+      setGestureImpulse((currentImpulse) => ({
+        deltaX,
+        deltaY: 0,
+        signal: currentImpulse.signal + 1,
+        target: "device",
+      }));
+    };
+
+    stage.addEventListener("wheel", handleNativeWheel, { passive: false });
+
+    return () => {
+      stage.removeEventListener("wheel", handleNativeWheel);
     };
   }, []);
 
@@ -3351,48 +3436,6 @@ export default function Home() {
     [],
   );
 
-  const handleStageWheel = useCallback(
-    (event: React.WheelEvent<HTMLElement>) => {
-      const isPinchZoom = event.ctrlKey;
-
-      if (!isRotateMode && isPointerOnDevice && !isPinchZoom) {
-        return;
-      }
-
-      event.preventDefault();
-      const deltaX = MathUtils.clamp(event.deltaX, -140, 140);
-      const deltaY = MathUtils.clamp(event.deltaY, -140, 140);
-      const zoomSensitivity = isPinchZoom
-        ? MODEL_DEPTH_WHEEL_SENSITIVITY * 3.2
-        : MODEL_DEPTH_WHEEL_SENSITIVITY;
-
-      setModelPositionOffset((currentPosition) =>
-        clampModelPosition([
-          currentPosition[0],
-          currentPosition[1],
-          currentPosition[2] - deltaY * zoomSensitivity,
-        ]),
-      );
-
-      if (
-        isPinchZoom ||
-        !isRotateMode ||
-        !isPointerOnDevice ||
-        Math.abs(deltaX) < 2
-      ) {
-        return;
-      }
-
-      setGestureImpulse((currentImpulse) => ({
-        deltaX,
-        deltaY: 0,
-        signal: currentImpulse.signal + 1,
-        target: "device",
-      }));
-    },
-    [isPointerOnDevice, isRotateMode],
-  );
-
   return (
     <main className="flex min-h-screen bg-zinc-950">
       <DeviceSidebar
@@ -3414,12 +3457,15 @@ export default function Home() {
         <div
           ref={stageRef}
           className="relative min-h-0 flex-1 [&_canvas]:h-full [&_canvas]:w-full"
-          style={{ cursor: stageCursor, touchAction: "none" }}
+          style={{
+            cursor: stageCursor,
+            overscrollBehavior: "contain",
+            touchAction: "none",
+          }}
           onPointerDown={handleStagePointerDown}
           onPointerLeave={handleStagePointerEnd}
           onPointerMove={handleStagePointerMove}
           onPointerUp={handleStagePointerEnd}
-          onWheel={handleStageWheel}
         >
           <Canvas
             className="h-full w-full"
