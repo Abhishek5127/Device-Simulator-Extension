@@ -171,19 +171,19 @@ type ClipEditState = {
 
 const MOTION_PROFILES: MotionProfile[] = [
   {
-    cameraDolly: 0.16,
-    cameraMomentum: 1.05,
-    cameraOrbit: 0.08,
-    depthDistance: 0.42,
+    cameraDolly: 0.2,
+    cameraMomentum: 1.18,
+    cameraOrbit: 0.1,
+    depthDistance: 0.54,
     durationScale: 1,
     gestureBoost: 1,
-    hoverLift: 0.035,
+    hoverLift: 0.04,
     id: "cinematic",
     label: "Cinematic",
-    movementDistance: 1,
-    overshoot: 0.12,
-    rotationIntensity: 1,
-    settleDamping: 16,
+    movementDistance: 1.18,
+    overshoot: 0.18,
+    rotationIntensity: 1.22,
+    settleDamping: 14,
   },
   {
     cameraDolly: 0.1,
@@ -280,102 +280,102 @@ const SPEED_PROFILES: SpeedProfile[] = [
 
 const MOVEMENT_PRESETS: MovementPreset[] = [
   {
-    camera: [0.08, 0.02, -0.1],
+    camera: [0.14, 0.04, -0.16],
     colorClass: "bg-sky-400 text-zinc-950",
     duration: 1.8,
     durationLabel: "1.8s",
     id: "hero-orbit",
     name: "Hero Orbit",
-    position: [0.08, 0.03, 0],
-    rotation: [-Math.PI / 22, Math.PI / 2.8, Math.PI / 36],
+    position: [0.16, 0.06, 0.04],
+    rotation: [-Math.PI / 14, Math.PI / 1.85, Math.PI / 24],
     shortLabel: "HO",
   },
   {
-    camera: [-0.08, 0.02, -0.08],
+    camera: [-0.16, 0.04, -0.14],
     colorClass: "bg-cyan-300 text-zinc-950",
     duration: 2.1,
     durationLabel: "2.1s",
     id: "slow-reveal",
     name: "Slow Reveal",
-    position: [-0.14, 0.02, 0.02],
-    rotation: [-Math.PI / 14, -Math.PI / 2.9, -Math.PI / 40],
+    position: [-0.22, 0.05, 0.06],
+    rotation: [-Math.PI / 9, -Math.PI / 1.95, -Math.PI / 24],
     shortLabel: "SR",
   },
   {
-    camera: [0, 0.06, -0.12],
+    camera: [0.03, 0.12, -0.18],
     colorClass: "bg-emerald-400 text-zinc-950",
     duration: 1.7,
     durationLabel: "1.7s",
     id: "glass-tilt",
     name: "Glass Tilt",
-    position: [0, 0.08, 0.03],
-    rotation: [-Math.PI / 6.5, Math.PI / 12, Math.PI / 28],
+    position: [0.03, 0.16, 0.06],
+    rotation: [-Math.PI / 4.8, Math.PI / 7.5, Math.PI / 18],
     shortLabel: "GT",
   },
   {
-    camera: [0.04, -0.04, -0.06],
+    camera: [0.08, -0.08, -0.12],
     colorClass: "bg-lime-300 text-zinc-950",
     duration: 1.9,
     durationLabel: "1.9s",
     id: "macro-dip",
     name: "Macro Dip",
-    position: [0.04, -0.08, 0.04],
-    rotation: [Math.PI / 7.5, -Math.PI / 14, -Math.PI / 32],
+    position: [0.08, -0.16, 0.08],
+    rotation: [Math.PI / 5.2, -Math.PI / 8.5, -Math.PI / 20],
     shortLabel: "MD",
   },
   {
-    camera: [0.12, 0.01, -0.1],
+    camera: [0.2, 0.03, -0.17],
     colorClass: "bg-amber-400 text-zinc-950",
     duration: 2,
     durationLabel: "2.0s",
     id: "table-sweep",
     name: "Table Sweep",
-    position: [0.18, 0.02, 0],
-    rotation: [Math.PI / 20, Math.PI / 3.6, -Math.PI / 18],
+    position: [0.3, 0.04, 0.05],
+    rotation: [Math.PI / 13, Math.PI / 2.25, -Math.PI / 12],
     shortLabel: "TS",
   },
   {
-    camera: [-0.12, 0.01, -0.1],
+    camera: [-0.2, 0.03, -0.17],
     colorClass: "bg-rose-400 text-zinc-950",
     duration: 2,
     durationLabel: "2.0s",
     id: "reverse-sweep",
     name: "Reverse Sweep",
-    position: [-0.18, 0.02, 0],
-    rotation: [Math.PI / 22, -Math.PI / 3.6, Math.PI / 18],
+    position: [-0.3, 0.04, 0.05],
+    rotation: [Math.PI / 13, -Math.PI / 2.25, Math.PI / 12],
     shortLabel: "RS",
   },
   {
-    camera: [0, 0.02, -0.16],
+    camera: [0.02, 0.05, -0.24],
     colorClass: "bg-violet-300 text-zinc-950",
     duration: 2.4,
     durationLabel: "2.4s",
     id: "premium-spin",
     name: "Premium Spin",
-    position: [0, 0.04, 0.05],
-    rotation: [-Math.PI / 18, Math.PI * 0.95, 0],
+    position: [0.03, 0.08, 0.1],
+    rotation: [-Math.PI / 12, Math.PI * 1.45, Math.PI / 20],
     shortLabel: "PS",
   },
   {
-    camera: [0.08, 0.06, -0.14],
+    camera: [0.15, 0.1, -0.2],
     colorClass: "bg-fuchsia-300 text-zinc-950",
     duration: 2.2,
     durationLabel: "2.2s",
     id: "showcase",
     name: "Showcase Arc",
-    position: [0.1, 0.07, 0.03],
-    rotation: [-Math.PI / 8, Math.PI / 3.2, Math.PI / 14],
+    position: [0.18, 0.13, 0.08],
+    rotation: [-Math.PI / 5.5, Math.PI / 2.2, Math.PI / 9],
     shortLabel: "SC",
   },
   {
-    camera: [-0.04, 0.04, -0.06],
+    camera: [-0.08, 0.08, -0.12],
     colorClass: "bg-teal-300 text-zinc-950",
     duration: 1.8,
     durationLabel: "1.8s",
     id: "final-settle",
     name: "Final Settle",
-    position: [-0.04, 0.04, 0.02],
-    rotation: [Math.PI / 12, -Math.PI / 5.5, -Math.PI / 40],
+    position: [-0.08, 0.08, 0.05],
+    rotation: [Math.PI / 8.5, -Math.PI / 3.8, -Math.PI / 24],
     shortLabel: "FS",
   },
 ];
@@ -812,34 +812,57 @@ const sampleAnimationTimeline = (
     if (
       !clip.enabled ||
       trackMutedMap.get(clip.trackId) ||
-      time < clip.start ||
-      time > clip.start + clip.duration
+      time < clip.start
     ) {
       return;
     }
 
     const progress = MathUtils.clamp((time - clip.start) / clip.duration, 0, 1);
     const easedProgress = easeInOutCubic(progress);
+    const travelProgress = easeOutBack(easedProgress, motionProfile.overshoot);
     const arcProgress = Math.sin(progress * Math.PI);
+    const motionRipple = Math.sin(progress * Math.PI * 2);
+    const parallaxRipple = Math.sin(progress * Math.PI * 3) * arcProgress;
+    const finalDepth =
+      clip.position[2] * motionProfile.movementDistance +
+      motionProfile.depthDistance * 0.72;
 
     hasSample = true;
     sample.rotation[0] +=
-      clip.rotation[0] * motionProfile.rotationIntensity * easedProgress;
+      clip.rotation[0] *
+      motionProfile.rotationIntensity *
+      (easedProgress + motionRipple * 0.08);
     sample.rotation[1] +=
-      clip.rotation[1] * motionProfile.rotationIntensity * easedProgress;
+      clip.rotation[1] *
+      motionProfile.rotationIntensity *
+      (easedProgress + motionRipple * 0.1);
     sample.rotation[2] +=
-      clip.rotation[2] * motionProfile.rotationIntensity * easedProgress;
+      clip.rotation[2] *
+      motionProfile.rotationIntensity *
+      (easedProgress + motionRipple * 0.12);
     sample.position[0] +=
-      clip.position[0] * motionProfile.movementDistance * arcProgress;
+      clip.position[0] *
+      motionProfile.movementDistance *
+      (travelProgress + parallaxRipple * 0.08);
     sample.position[1] +=
-      clip.position[1] * motionProfile.movementDistance * arcProgress;
+      clip.position[1] *
+      motionProfile.movementDistance *
+      (travelProgress - parallaxRipple * 0.06);
     sample.position[2] +=
-      (clip.position[2] * motionProfile.movementDistance +
-        motionProfile.depthDistance * 0.45) *
-      arcProgress;
-    sample.camera[0] += clip.camera[0] * motionProfile.cameraMomentum * arcProgress;
-    sample.camera[1] += clip.camera[1] * motionProfile.cameraMomentum * arcProgress;
-    sample.camera[2] += clip.camera[2] * motionProfile.cameraMomentum * arcProgress;
+      finalDepth * travelProgress +
+      motionProfile.depthDistance * 0.18 * arcProgress;
+    sample.camera[0] +=
+      clip.camera[0] *
+      motionProfile.cameraMomentum *
+      (arcProgress + parallaxRipple * 0.05);
+    sample.camera[1] +=
+      clip.camera[1] *
+      motionProfile.cameraMomentum *
+      (arcProgress - parallaxRipple * 0.04);
+    sample.camera[2] +=
+      clip.camera[2] *
+      motionProfile.cameraMomentum *
+      (arcProgress + motionRipple * 0.05);
   });
 
   return hasSample ? sample : null;
@@ -1375,6 +1398,7 @@ const DeviceModel = memo(function DeviceModel({
   onDeviceDragStart,
   onDeviceHoverEnd,
   onDeviceHoverStart,
+  onModelPositionCommit,
   onMediaDurationChange,
   onMediaEnded,
   onMediaPlayStateChange,
@@ -1400,6 +1424,7 @@ const DeviceModel = memo(function DeviceModel({
   onDeviceDragStart: () => void;
   onDeviceHoverEnd: () => void;
   onDeviceHoverStart: () => void;
+  onModelPositionCommit: (position: [number, number, number]) => void;
   onMediaDurationChange: (duration: number) => void;
   onMediaEnded: () => void;
   onMediaPlayStateChange: (isPlaying: boolean) => void;
@@ -1427,6 +1452,7 @@ const DeviceModel = memo(function DeviceModel({
     motionProfile: MotionProfile;
     peakPosition: [number, number, number];
     speedProfile: SpeedProfile;
+    toPosition: [number, number, number];
     toRotation: [number, number, number];
   } | null>(null);
   const rotationVelocityRef = useRef<[number, number, number]>([0, 0, 0]);
@@ -1494,21 +1520,35 @@ const DeviceModel = memo(function DeviceModel({
       fromRotation[2] +
       activeMovement.rotation[2] * motionProfile.rotationIntensity,
     ];
+    const basePosition: [number, number, number] = [
+      ...currentPositionRef.current,
+    ];
+    const requestedPosition: [number, number, number] = [
+      basePosition[0] +
+      activeMovement.position[0] * motionProfile.movementDistance,
+      basePosition[1] +
+      activeMovement.position[1] * motionProfile.movementDistance,
+      basePosition[2] +
+      activeMovement.position[2] * motionProfile.movementDistance +
+      motionProfile.depthDistance,
+    ];
+    const toPosition = clampModelPosition(requestedPosition);
+    const peakPosition: [number, number, number] = [
+      toPosition[0] - basePosition[0],
+      toPosition[1] - basePosition[1],
+      toPosition[2] - basePosition[2],
+    ];
 
     targetRotationRef.current = [...toRotation];
     movementAnimationRef.current = {
-      basePosition: [...modelPositionOffsetRef.current],
+      basePosition,
       duration,
       elapsed: 0,
       fromRotation,
       motionProfile,
-      peakPosition: [
-        activeMovement.position[0] * motionProfile.movementDistance,
-        activeMovement.position[1] * motionProfile.movementDistance,
-        activeMovement.position[2] * motionProfile.movementDistance +
-        motionProfile.depthDistance,
-      ],
+      peakPosition,
       speedProfile,
+      toPosition,
       toRotation,
     };
   }, [
@@ -1625,35 +1665,44 @@ const DeviceModel = memo(function DeviceModel({
       );
 
       const movementArc = Math.sin(progress * Math.PI);
+      const travelProgress = easedProgress;
       const flyInDepth =
-        Math.pow(1 - progress, 2) *
+        movementArc *
         movementAnimation.motionProfile.depthDistance *
-        0.55;
+        0.18;
       const breathingLift =
         Math.sin(progress * Math.PI * 2) *
-        0.012 *
+        0.022 *
+        movementAnimation.speedProfile.spinGain;
+      const motionRipple =
+        Math.sin(progress * Math.PI * 2) *
+        0.055 *
         movementAnimation.speedProfile.spinGain;
       const basePosition = movementAnimation.basePosition;
       const peakPosition = movementAnimation.peakPosition;
 
       const nextPosition: [number, number, number] = [
-        basePosition[0] + peakPosition[0] * movementArc,
-        basePosition[1] + peakPosition[1] * movementArc + breathingLift,
-        basePosition[2] + peakPosition[2] * movementArc + flyInDepth,
+        basePosition[0] + peakPosition[0] * travelProgress,
+        basePosition[1] + peakPosition[1] * travelProgress + breathingLift,
+        basePosition[2] + peakPosition[2] * travelProgress + flyInDepth,
       ];
 
       currentPositionRef.current = nextPosition;
       group.position.set(...nextPosition);
       group.rotation.set(
-        currentRotation[0],
-        currentRotation[1],
-        currentRotation[2],
+        currentRotation[0] + motionRipple * 0.7,
+        currentRotation[1] + motionRipple,
+        currentRotation[2] - motionRipple * 0.45,
       );
 
       if (progress >= 1) {
         targetRotationRef.current = [...movementAnimation.toRotation];
-        currentPositionRef.current = [...movementAnimation.basePosition];
-        group.position.set(...movementAnimation.basePosition);
+        currentRotationRef.current = [...movementAnimation.toRotation];
+        currentPositionRef.current = [...movementAnimation.toPosition];
+        modelPositionOffsetRef.current = [...movementAnimation.toPosition];
+        group.position.set(...movementAnimation.toPosition);
+        group.rotation.set(...movementAnimation.toRotation);
+        onModelPositionCommit(movementAnimation.toPosition);
         movementAnimationRef.current = null;
       }
 
@@ -3446,6 +3495,7 @@ export default function Home() {
                 onDeviceDragStart={handleDeviceDragStart}
                 onDeviceHoverEnd={handleDeviceHoverEnd}
                 onDeviceHoverStart={handleDeviceHoverStart}
+                onModelPositionCommit={setModelPositionOffset}
                 onMediaDurationChange={setMediaDuration}
                 onMediaEnded={() => setIsMediaPlaying(false)}
                 onMediaPlayStateChange={setIsMediaPlaying}
