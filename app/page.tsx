@@ -491,6 +491,131 @@ function PlayTrackIcon({ isPlaying }: { isPlaying: boolean }) {
   );
 }
 
+function AddIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function AddShotIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M4 7h4" />
+      <path d="M16 7h4" />
+      <path d="M9 7l6-4v8z" />
+      <path d="M5 17h14" />
+    </svg>
+  );
+}
+
+function DuplicateIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <rect height="10" rx="2" width="10" x="8" y="8" />
+      <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function MuteIcon({ muted }: { muted: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      {muted ? (
+        <>
+          <path d="m22 9-6 6" />
+          <path d="m16 9 6 6" />
+        </>
+      ) : (
+        <>
+          <path d="M15 9.5a4 4 0 0 1 0 5" />
+          <path d="M18 7a8 8 0 0 1 0 10" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function TimelineZoomIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+      <path d="M8 11h6" />
+      <path d="M11 8v6" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
+    </svg>
+  );
+}
+
 function DownloadIcon() {
   return (
     <svg
@@ -553,6 +678,49 @@ function ToolButton({
           : "border-sky-300 bg-sky-400 text-zinc-950"
         : "border-zinc-800 bg-zinc-950 text-zinc-100 hover:border-zinc-500 hover:bg-zinc-900"
         }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TimelineIconButton({
+  active = false,
+  children,
+  compact = false,
+  danger = false,
+  disabled = false,
+  label,
+  onClick,
+}: {
+  active?: boolean;
+  children: ReactNode;
+  compact?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      title={label}
+      onClick={onClick}
+      className={`grid shrink-0 place-items-center rounded-md border transition ${
+        compact ? "h-7 w-7 [&_svg]:h-3.5 [&_svg]:w-3.5" : "h-8 w-8"
+      } ${
+        disabled
+          ? "cursor-not-allowed border-zinc-800 bg-zinc-900 text-zinc-600"
+          : active
+            ? danger
+              ? "border-red-300 bg-red-500 text-white"
+              : "border-sky-300 bg-sky-400 text-zinc-950"
+            : danger
+              ? "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-red-400 hover:text-red-200"
+              : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
+      }`}
     >
       {children}
     </button>
@@ -1689,7 +1857,6 @@ function TimelineEditor({
   onDeleteTrack,
   onDuplicateTrack,
   onMuteTrack,
-  onReorderTrack,
   onSeek,
   onTimelinePanelHeightChange,
   onTimelineZoomChange,
@@ -1726,11 +1893,6 @@ function TimelineEditor({
   onDeleteTrack: (kind: TimelineTrackKind, trackId: string) => void;
   onDuplicateTrack: (kind: TimelineTrackKind, track: TimelineTrack) => void;
   onMuteTrack: (kind: TimelineTrackKind, trackId: string) => void;
-  onReorderTrack: (
-    kind: TimelineTrackKind,
-    trackId: string,
-    direction: -1 | 1,
-  ) => void;
   onSeek: (time: number) => void;
   onTimelinePanelHeightChange: (height: number) => void;
   onTimelineZoomChange: (zoom: number) => void;
@@ -1869,13 +2031,15 @@ function TimelineEditor({
         </div>
         <button
           type="button"
-          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-100 group-hover:opacity-100"
+          aria-label="Delete clip"
+          title="Delete clip"
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-100 group-hover:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
           onClick={(event) => {
             event.stopPropagation();
             onClipDelete(kind, clip.clipId);
           }}
         >
-          x
+          <TrashIcon />
         </button>
         <div
           className="h-full w-2 cursor-ew-resize bg-zinc-700 transition group-hover:bg-sky-400"
@@ -1897,18 +2061,14 @@ function TimelineEditor({
     <div className="min-h-0 rounded-md border border-zinc-800 bg-zinc-950/70">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-zinc-800 px-2">
         <div className="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
+          <TimelineIconButton
+            active={isPlaying}
             disabled={kind === "animation" && !animationClips.length}
+            label={isPlaying ? `Pause ${title}` : `Play ${title}`}
             onClick={onTogglePlayback}
-            className={`grid h-8 w-8 shrink-0 place-items-center rounded-md border transition ${kind === "media" || animationClips.length
-              ? "border-sky-400 bg-sky-400 text-zinc-950 hover:bg-sky-300"
-              : "cursor-not-allowed border-zinc-800 bg-zinc-900 text-zinc-600"
-              }`}
-            title={isPlaying ? `Pause ${title}` : `Play ${title}`}
           >
             <PlayTrackIcon isPlaying={isPlaying} />
-          </button>
+          </TimelineIconButton>
           <div className="min-w-0">
             <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-500">
               {title}
@@ -1919,32 +2079,29 @@ function TimelineEditor({
         <div className="flex shrink-0 items-center gap-1">
           {kind === "animation" ? (
             <>
-              <button
-                type="button"
+              <TimelineIconButton
+                active={isPresetListOpen}
+                label={isPresetListOpen ? "Close shot presets" : "Add shot preset"}
                 onClick={onTogglePresetList}
-                className={`h-8 rounded-md border px-3 text-xs font-semibold transition ${isPresetListOpen
-                  ? "border-sky-400 bg-sky-400 text-zinc-950"
-                  : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
-                  }`}
               >
-                Add Shot
-              </button>
-              <button
-                type="button"
+                <AddShotIcon />
+              </TimelineIconButton>
+              <TimelineIconButton
+                danger
+                disabled={!animationClips.length}
+                label="Clear animation clips"
                 onClick={onClearAnimations}
-                className="h-8 rounded-md border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-100"
               >
-                Clear
-              </button>
+                <TrashIcon />
+              </TimelineIconButton>
             </>
           ) : null}
-          <button
-            type="button"
+          <TimelineIconButton
+            label={`Add ${kind} track`}
             onClick={() => onAddTrack(kind)}
-            className="h-8 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-zinc-100"
           >
-            Track +
-          </button>
+            <AddIcon />
+          </TimelineIconButton>
         </div>
       </div>
       <div className="max-h-32 overflow-auto">
@@ -1955,54 +2112,35 @@ function TimelineEditor({
             style={{ gridTemplateColumns: "156px 1fr" }}
           >
             <div className="flex items-center gap-1 border-r border-zinc-800 px-2">
-              <button
-                type="button"
+              <TimelineIconButton
+                active={track.muted}
+                compact
+                danger={track.muted}
+                label={track.muted ? "Unmute track" : "Mute track"}
                 onClick={() => onMuteTrack(kind, track.id)}
-                className={`grid h-7 w-7 place-items-center rounded border text-[10px] font-bold ${track.muted
-                  ? "border-red-400 bg-red-500 text-white"
-                  : "border-zinc-800 bg-zinc-900 text-zinc-300"
-                  }`}
-                title={track.muted ? "Unmute track" : "Mute track"}
               >
-                M
-              </button>
-              <button
-                type="button"
-                onClick={() => onReorderTrack(kind, track.id, -1)}
-                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
-                title="Move track up"
-              >
-                ^
-              </button>
-              <button
-                type="button"
-                onClick={() => onReorderTrack(kind, track.id, 1)}
-                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
-                title="Move track down"
-              >
-                v
-              </button>
+                <MuteIcon muted={track.muted} />
+              </TimelineIconButton>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-semibold text-zinc-200">
                   {track.name}
                 </p>
               </div>
-              <button
-                type="button"
+              <TimelineIconButton
+                compact
+                label="Duplicate track"
                 onClick={() => onDuplicateTrack(kind, track)}
-                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
-                title="Duplicate track"
               >
-                +
-              </button>
-              <button
-                type="button"
+                <DuplicateIcon />
+              </TimelineIconButton>
+              <TimelineIconButton
+                compact
+                danger
+                label="Delete track"
                 onClick={() => onDeleteTrack(kind, track.id)}
-                className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-zinc-900 text-xs text-zinc-300"
-                title="Delete track"
               >
-                x
-              </button>
+                <TrashIcon />
+              </TimelineIconButton>
             </div>
             <div className="relative overflow-hidden">
               <div className="relative h-full" style={{ width: timelineWidth }}>
@@ -2043,14 +2181,13 @@ function TimelineEditor({
           }}
         />
         <div className="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/80 px-2 py-2">
-          <button
-            type="button"
+          <TimelineIconButton
+            active={isMasterPlaying}
+            label={isMasterPlaying ? "Pause all timelines" : "Play all timelines"}
             onClick={onToggleMasterPlayback}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-sky-400 bg-sky-400 text-zinc-950 transition hover:bg-sky-300"
-            title={isMasterPlaying ? "Pause all timelines" : "Play all timelines"}
           >
             <PlayTrackIcon isPlaying={isMasterPlaying} />
-          </button>
+          </TimelineIconButton>
           <div className="w-20 text-xs font-semibold text-zinc-400">
             {formatDuration(timelineTime)}
           </div>
@@ -2064,18 +2201,11 @@ function TimelineEditor({
             onChange={(event) => onSeek(Number(event.target.value))}
             className="min-w-0 flex-1 accent-sky-400"
           />
-          <input
-            aria-label="Jump to timestamp"
-            type="number"
-            min={0}
-            max={timelineDuration}
-            step={0.1}
-            value={Number(timelineTime.toFixed(2))}
-            onChange={(event) => onSeek(Number(event.target.value))}
-            className="h-9 w-20 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 outline-none focus:border-sky-400"
-          />
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Zoom
+          <label
+            className="flex items-center gap-2 text-zinc-500"
+            title="Timeline zoom"
+          >
+            <TimelineZoomIcon />
             <input
               aria-label="Timeline zoom"
               type="range"
@@ -2086,21 +2216,9 @@ function TimelineEditor({
               onChange={(event) => onTimelineZoomChange(Number(event.target.value))}
               className="w-28 accent-sky-400"
             />
-          </label>
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Panel
-            <input
-              aria-label="Timeline panel height"
-              type="range"
-              min={MIN_TIMELINE_PANEL_HEIGHT}
-              max={MAX_TIMELINE_PANEL_HEIGHT}
-              step={4}
-              value={timelinePanelHeight}
-              onChange={(event) =>
-                onTimelinePanelHeightChange(Number(event.target.value))
-              }
-              className="w-28 accent-sky-400"
-            />
+            <span className="w-8 text-right text-[11px] font-semibold tabular-nums text-zinc-500">
+              {Math.round(timelineZoom * 100)}%
+            </span>
           </label>
         </div>
         {isPresetListOpen ? (
@@ -3006,32 +3124,6 @@ export default function Home() {
     );
   };
 
-  const reorderTimelineTrack = (
-    kind: TimelineTrackKind,
-    trackId: string,
-    direction: -1 | 1,
-  ) => {
-    updateTracks(kind, (currentTracks) => {
-      const orderedTracks = getOrderedTracks(currentTracks, kind);
-      const currentIndex = orderedTracks.findIndex((track) => track.id === trackId);
-      const nextIndex = MathUtils.clamp(
-        currentIndex + direction,
-        0,
-        orderedTracks.length - 1,
-      );
-
-      if (currentIndex === -1 || currentIndex === nextIndex) {
-        return currentTracks;
-      }
-
-      const [movedTrack] = orderedTracks.splice(currentIndex, 1);
-
-      orderedTracks.splice(nextIndex, 0, movedTrack);
-
-      return orderedTracks.map((track, order) => ({ ...track, order }));
-    });
-  };
-
   const updateTimelineClip = (
     kind: TimelineTrackKind,
     clipId: number,
@@ -3414,7 +3506,6 @@ export default function Home() {
           onDeleteTrack={deleteTimelineTrack}
           onDuplicateTrack={duplicateTimelineTrack}
           onMuteTrack={toggleTimelineTrackMute}
-          onReorderTrack={reorderTimelineTrack}
           onSeek={seekTimeline}
           onTimelinePanelHeightChange={setTimelinePanelHeight}
           onTimelineZoomChange={setTimelineZoom}
