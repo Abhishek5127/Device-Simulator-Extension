@@ -50,7 +50,6 @@ const MODEL_CANVAS_PINCH_ZOOM_SENSITIVITY = 0.012;
 const MODEL_CANVAS_WHEEL_ZOOM_SENSITIVITY = 0.0028;
 const MODEL_GESTURE_ZOOM_SENSITIVITY = 0.45;
 const MODEL_DEPTH_LIMIT = 1.25;
-const MODEL_POSITION_DRAG_SENSITIVITY = 0.003;
 const MODEL_POSITION_LIMIT = 1.75;
 const MODEL_ROTATION_SENSITIVITY = 0.01;
 const RECORDING_MAX_HEIGHT = 1080;
@@ -67,6 +66,31 @@ const TEXTURE_KEYS = [
   "aoMap",
   "alphaMap",
 ] as const;
+
+const DEVICE_HIT_TARGETS: Record<
+  number,
+  {
+    position: [number, number, number];
+    scale: [number, number, number];
+  }
+> = {
+  1: {
+    position: [0, 0, 0],
+    scale: [0.22, 0.34, 0.18],
+  },
+  2: {
+    position: [0, 0, 0],
+    scale: [0.32, 0.24, 0.12],
+  },
+  3: {
+    position: [0, 0.02, -0.02],
+    scale: [1.6, 1.05, 0.8],
+  },
+  4: {
+    position: [0, 0, 0],
+    scale: [0.9, 1.35, 0.5],
+  },
+};
 type MotionProfileId =
   | "cinematic"
   | "fast"
@@ -1444,6 +1468,7 @@ const DeviceModel = memo(function DeviceModel({
 }) {
   const { scene } = useGLTF(device.modelPath);
   const { gl } = useThree();
+  const hitTarget = DEVICE_HIT_TARGETS[device.id] ?? DEVICE_HIT_TARGETS[1];
   const groupRef = useRef<Group | null>(null);
   const currentRotationRef = useRef<[number, number, number]>([
     ...DEFAULT_MODEL_ROTATION,
@@ -1865,6 +1890,15 @@ const DeviceModel = memo(function DeviceModel({
         onDeviceDragEnd();
       }}
     >
+      <mesh position={hitTarget.position} scale={hitTarget.scale}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          depthWrite={false}
+          opacity={0}
+          transparent
+        />
+      </mesh>
       <primitive
         object={scene}
         rotation={
@@ -2424,7 +2458,6 @@ export default function Home() {
   const backgroundDragStartRef = useRef<{
     pointerX: number;
     pointerY: number;
-    position: [number, number, number];
   } | null>(null);
   const isPointerOnDeviceRef = useRef(false);
   const isRotateModeRef = useRef(isRotateMode);
@@ -2509,13 +2542,9 @@ export default function Home() {
         : "Live page";
   const controlsEnabled = false;
   const stageCursor = isRotateMode
-    ? isDraggingDevice
+    ? isDraggingDevice || isDraggingBackground
       ? "grabbing"
-      : isPointerOnDevice
-        ? "grab"
-        : isDraggingBackground
-          ? "move"
-          : "default"
+      : "grab"
     : isPointerOnDevice
       ? "grab"
       : "default";
@@ -3387,13 +3416,12 @@ export default function Home() {
       backgroundDragStartRef.current = {
         pointerX: event.clientX,
         pointerY: event.clientY,
-        position: [...modelPositionOffset],
       };
       event.currentTarget.setPointerCapture(event.pointerId);
       setIsDraggingBackground(true);
       setIsDraggingDevice(false);
     },
-    [isDraggingDevice, isRotateMode, modelPositionOffset],
+    [isDraggingDevice, isRotateMode],
   );
 
   const handleStagePointerMove = useCallback(
@@ -3414,13 +3442,14 @@ export default function Home() {
       const deltaX = event.clientX - dragStart.pointerX;
       const deltaY = event.clientY - dragStart.pointerY;
 
-      setModelPositionOffset(
-        clampModelPosition([
-          dragStart.position[0] + deltaX * MODEL_POSITION_DRAG_SENSITIVITY,
-          dragStart.position[1] - deltaY * MODEL_POSITION_DRAG_SENSITIVITY,
-          dragStart.position[2],
-        ]),
-      );
+      dragStart.pointerX = event.clientX;
+      dragStart.pointerY = event.clientY;
+      setGestureImpulse((currentImpulse) => ({
+        deltaX,
+        deltaY,
+        signal: currentImpulse.signal + 1,
+        target: "device",
+      }));
     },
     [isDraggingBackground, isRotateMode],
   );
