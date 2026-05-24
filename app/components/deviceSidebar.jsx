@@ -7,7 +7,7 @@ export const devices = [
     id: 1,
     name: "iPhone 17",
     dimensions: '6.1"',
-    color: "bg-sky-500",
+    color: "bg-cyan-300",
     modelPath: "/models/iPhone17.glb",
     modelScale: 11,
     screen: {
@@ -22,7 +22,7 @@ export const devices = [
     id: 4,
     name: "iPhone 17 Orange",
     dimensions: '6.1"',
-    color: "bg-sky-500",
+    color: "bg-orange-300",
     modelPath: "/models/iPhone17Orange.glb",
     modelScale: 1,
     screen: {
@@ -38,7 +38,7 @@ export const devices = [
     id: 2,
     name: "iPad 13",
     dimensions: '11"',
-    color: "bg-emerald-500",
+    color: "bg-emerald-300",
     modelPath: "/models/iPad13.glb",
     modelScale: 5.5,
     screen: {
@@ -53,7 +53,7 @@ export const devices = [
     id: 3,
     name: "MacBook",
     dimensions: '14"',
-    color: "bg-amber-500",
+    color: "bg-amber-300",
     modelPath: "/models/macbook.glb",
     modelScale: 1.25,
     screen: {
@@ -151,18 +151,23 @@ const DeviceSidebar = ({
   };
 
   return (
-    <aside className="h-screen w-72 shrink-0 border-r border-zinc-800 bg-zinc-950 px-4 py-5 text-zinc-100">
-      <div className="mb-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Devices
+    <aside className="max-h-[46vh] w-full shrink-0 overflow-y-auto border-b border-white/10 bg-zinc-950/95 px-4 py-4 text-zinc-100 shadow-2xl shadow-black/30 lg:h-screen lg:max-h-none lg:w-80 lg:border-b-0 lg:border-r">
+      <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.035] px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200/80">
+          Device Studio
         </p>
-        <h1 className="mt-1 text-xl font-semibold">3D Simulator</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+          3D Simulator
+        </h1>
+        <p className="mt-1 text-xs text-zinc-500">
+          Stage, capture, and animate product previews.
+        </p>
       </div>
 
-      <form className="mb-5" onSubmit={handleSubmit}>
+      <form className="mb-4 rounded-lg border border-white/10 bg-zinc-900/55 p-3" onSubmit={handleSubmit}>
         <label
           htmlFor="website-url"
-          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-400"
         >
           Website
         </label>
@@ -173,21 +178,21 @@ const DeviceSidebar = ({
             value={draftUrl}
             onChange={(event) => setDraftUrl(event.target.value)}
             placeholder="https://example.com"
-            className="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-sky-400"
+            className="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/15"
           />
           <button
             type="submit"
-            className="rounded-md bg-sky-400 px-3 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-sky-300"
+            className="rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-zinc-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
           >
             Go
           </button>
         </div>
       </form>
 
-      <div className="mb-5">
+      <div className="mb-4 rounded-lg border border-white/10 bg-zinc-900/55 p-3">
         <label
           htmlFor="screen-media"
-          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-400"
         >
           Photo / Video
         </label>
@@ -196,7 +201,7 @@ const DeviceSidebar = ({
           type="file"
           accept="image/*,video/*"
           onChange={handleMediaUpload}
-          className="block w-full cursor-pointer rounded-md border border-zinc-800 bg-zinc-900 text-sm text-zinc-100 file:mr-3 file:border-0 file:bg-sky-400 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950 hover:file:bg-sky-300"
+          className="block w-full cursor-pointer rounded-md border border-white/10 bg-zinc-950/80 text-sm text-zinc-100 file:mr-3 file:border-0 file:bg-zinc-200 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950 hover:file:bg-white"
         />
         <div className="mt-2 flex items-center justify-between gap-2 text-xs text-zinc-500">
           <span className="min-w-0 truncate">
@@ -208,7 +213,7 @@ const DeviceSidebar = ({
             <button
               type="button"
               onClick={onUseWebsiteContent}
-              className="shrink-0 rounded border border-zinc-800 px-2 py-1 font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-zinc-100"
+              className="shrink-0 rounded-md border border-white/10 bg-zinc-950/70 px-2 py-1 font-semibold text-zinc-300 transition hover:border-cyan-300/60 hover:text-zinc-100"
             >
               Website
             </button>
@@ -216,10 +221,10 @@ const DeviceSidebar = ({
         </div>
       </div>
 
-      <div className="mb-5">
+      <div className="mb-5 rounded-lg border border-white/10 bg-zinc-900/55 p-3">
         <label
           htmlFor="canvas-background-color"
-          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-400"
         >
           Canvas Background
         </label>
@@ -231,7 +236,7 @@ const DeviceSidebar = ({
             onChange={(event) =>
               handleCanvasBackgroundColorChange(event.target.value)
             }
-            className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-zinc-800 bg-zinc-900 p-1"
+            className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-white/10 bg-zinc-950/80 p-1"
           />
           <input
             id="canvas-background-color"
@@ -241,11 +246,19 @@ const DeviceSidebar = ({
               handleCanvasBackgroundColorChange(event.target.value)
             }
             placeholder="#18181b"
-            className="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-sky-400"
+            className="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/15"
           />
         </div>
       </div>
 
+      <div className="mb-2 flex items-center justify-between px-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Devices
+        </p>
+        <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] font-semibold text-zinc-400">
+          {devices.length}
+        </span>
+      </div>
       <div className="space-y-2">
         {devices.map((device) => {
           const isSelected = selectedDeviceId === device.id;
@@ -255,19 +268,19 @@ const DeviceSidebar = ({
               key={device.id}
               type="button"
               onClick={() => onSelectDevice(device)}
-              className={`flex w-full items-center gap-3 rounded-md border px-3 py-3 text-left transition ${
+              className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition ${
                 isSelected
-                  ? "border-sky-400 bg-zinc-900"
-                  : "border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900"
+                  ? "border-cyan-300/70 bg-cyan-300/10 shadow-lg shadow-cyan-950/20"
+                  : "border-white/10 bg-zinc-900/35 hover:border-white/20 hover:bg-zinc-900/80"
               }`}
             >
               <span
-                className={`grid h-10 w-10 shrink-0 place-items-center rounded ${device.color} text-sm font-bold text-zinc-950`}
+                className={`grid h-10 w-10 shrink-0 place-items-center rounded-md ${device.color} text-sm font-bold text-zinc-950 shadow-inner shadow-white/30`}
               >
                 {device.name.charAt(0)}
               </span>
               <span className="min-w-0">
-                <span className="block font-medium">{device.name}</span>
+                <span className="block font-semibold">{device.name}</span>
                 <span className="block text-sm text-zinc-500">
                   {device.dimensions} preview
                 </span>

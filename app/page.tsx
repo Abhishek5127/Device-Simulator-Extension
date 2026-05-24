@@ -1,4 +1,4 @@
-"use client"
+"use client";
 import {
   memo,
   Suspense,
@@ -673,11 +673,11 @@ function ToolButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`grid h-11 w-11 place-items-center rounded-md border transition ${active
+      className={`grid h-11 w-11 place-items-center rounded-lg border shadow-sm transition ${active
         ? danger
-          ? "border-red-300 bg-red-500 text-white"
-          : "border-sky-300 bg-sky-400 text-zinc-950"
-        : "border-zinc-800 bg-zinc-950 text-zinc-100 hover:border-zinc-500 hover:bg-zinc-900"
+          ? "border-red-300 bg-red-500 text-white shadow-red-950/30"
+          : "border-cyan-300 bg-cyan-300 text-zinc-950 shadow-cyan-950/30"
+        : "border-white/10 bg-zinc-900/65 text-zinc-100 hover:border-white/25 hover:bg-zinc-800"
         }`}
     >
       {children}
@@ -709,18 +709,18 @@ function TimelineIconButton({
       disabled={disabled}
       title={label}
       onClick={onClick}
-      className={`grid shrink-0 place-items-center rounded-md border transition ${
+      className={`grid shrink-0 place-items-center rounded-md border shadow-sm transition ${
         compact ? "h-7 w-7 [&_svg]:h-3.5 [&_svg]:w-3.5" : "h-8 w-8"
       } ${
         disabled
-          ? "cursor-not-allowed border-zinc-800 bg-zinc-900 text-zinc-600"
+          ? "cursor-not-allowed border-white/5 bg-zinc-900/60 text-zinc-600"
           : active
             ? danger
               ? "border-red-300 bg-red-500 text-white"
-              : "border-sky-300 bg-sky-400 text-zinc-950"
+              : "border-cyan-300 bg-cyan-300 text-zinc-950"
             : danger
-              ? "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-red-400 hover:text-red-200"
-              : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
+              ? "border-white/10 bg-zinc-900/70 text-zinc-400 hover:border-red-400 hover:text-red-200"
+              : "border-white/10 bg-zinc-900/70 text-zinc-300 hover:border-white/25 hover:text-zinc-100"
       }`}
     >
       {children}
@@ -2067,9 +2067,11 @@ function TimelineEditor({
     return (
       <div
         key={`${kind}-${clip.clipId}`}
-        className={`group absolute top-2 flex h-10 items-center overflow-hidden rounded border text-left shadow-lg transition ${isAnimationClip && activeAnimationClipId === clip.clipId
-          ? "border-sky-300 bg-sky-400/20 shadow-sky-400/20"
-          : "border-zinc-700 bg-zinc-950 hover:border-sky-400"
+        className={`group absolute top-2 flex h-10 items-center overflow-hidden rounded-md border text-left shadow-lg transition ${isAnimationClip && activeAnimationClipId === clip.clipId
+          ? "border-cyan-200 bg-cyan-300/25 shadow-cyan-400/20"
+          : isAnimationClip
+            ? "border-cyan-300/35 bg-cyan-400/10 hover:border-cyan-200"
+            : "border-emerald-300/35 bg-emerald-400/10 hover:border-emerald-200"
           }`}
         style={{ left, width }}
         onDoubleClick={() => {
@@ -2080,7 +2082,7 @@ function TimelineEditor({
         onPointerDown={(event) => beginClipEdit(kind, clip, "move", event)}
       >
         <div
-          className="h-full w-2 cursor-ew-resize bg-zinc-700 transition group-hover:bg-sky-400"
+          className="h-full w-2 cursor-ew-resize bg-white/20 transition group-hover:bg-cyan-300"
           onPointerDown={(event) => beginClipEdit(kind, clip, "trim-start", event)}
         />
         <div className="min-w-0 flex-1 px-2">
@@ -2095,7 +2097,7 @@ function TimelineEditor({
           type="button"
           aria-label="Delete clip"
           title="Delete clip"
-          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-100 group-hover:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 transition hover:bg-zinc-900 hover:text-zinc-100 group-hover:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
           onClick={(event) => {
             event.stopPropagation();
             onClipDelete(kind, clip.clipId);
@@ -2104,7 +2106,7 @@ function TimelineEditor({
           <TrashIcon />
         </button>
         <div
-          className="h-full w-2 cursor-ew-resize bg-zinc-700 transition group-hover:bg-sky-400"
+          className="h-full w-2 cursor-ew-resize bg-white/20 transition group-hover:bg-cyan-300"
           onPointerDown={(event) => beginClipEdit(kind, clip, "trim-end", event)}
         />
       </div>
@@ -2120,8 +2122,8 @@ function TimelineEditor({
     isPlaying: boolean,
     onTogglePlayback: () => void,
   ) => (
-    <div className="min-h-0 rounded-md border border-zinc-800 bg-zinc-950/70">
-      <div className="flex h-12 items-center justify-between gap-3 border-b border-zinc-800 px-2">
+    <div className="min-h-0 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/60 shadow-inner shadow-black/25">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-2">
         <div className="flex min-w-0 items-center gap-2">
           <TimelineIconButton
             active={isPlaying}
@@ -2132,7 +2134,7 @@ function TimelineEditor({
             <PlayTrackIcon isPlaying={isPlaying} />
           </TimelineIconButton>
           <div className="min-w-0">
-            <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <p className="truncate text-xs font-semibold uppercase tracking-wide text-zinc-300">
               {title}
             </p>
             <p className="truncate text-[11px] text-zinc-500">{subtitle}</p>
@@ -2170,10 +2172,10 @@ function TimelineEditor({
         {tracks.map((track) => (
           <div
             key={track.id}
-            className="grid h-16 border-b border-zinc-900 last:border-b-0"
+            className="grid h-16 border-b border-white/5 last:border-b-0"
             style={{ gridTemplateColumns: "156px 1fr" }}
           >
-            <div className="flex items-center gap-1 border-r border-zinc-800 px-2">
+            <div className="flex items-center gap-1 border-r border-white/10 bg-zinc-950/40 px-2">
               <TimelineIconButton
                 active={track.muted}
                 compact
@@ -2204,10 +2206,10 @@ function TimelineEditor({
                 <TrashIcon />
               </TimelineIconButton>
             </div>
-            <div className="relative overflow-hidden">
+            <div className="relative overflow-hidden bg-[linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:86px_100%]">
               <div className="relative h-full" style={{ width: timelineWidth }}>
                 <div
-                  className="absolute inset-y-0 w-px bg-sky-300 shadow-[0_0_16px_rgba(56,189,248,0.9)]"
+                  className="absolute inset-y-0 w-px bg-cyan-200 shadow-[0_0_16px_rgba(103,232,249,0.9)]"
                   style={{ left: playheadX }}
                 />
                 {clips
@@ -2224,14 +2226,14 @@ function TimelineEditor({
   return (
     <div
       ref={timelineRootRef}
-      className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"
+      className="shrink-0 border-t border-white/10 bg-zinc-950/95 px-3 py-2 text-zinc-100 shadow-2xl shadow-black/30"
       style={{ height: timelinePanelHeight }}
       onPointerMove={updateClipEdit}
       onPointerUp={endClipEdit}
     >
       <div className="flex h-full flex-col gap-2">
         <div
-          className="-mx-3 -mt-2 h-2 cursor-row-resize border-b border-zinc-900 bg-zinc-950 transition hover:bg-sky-400/30"
+          className="-mx-3 -mt-2 h-2 cursor-row-resize border-b border-white/5 bg-zinc-950 transition hover:bg-cyan-300/25"
           title="Drag to resize timeline"
           onPointerDown={(event) => {
             event.preventDefault();
@@ -2242,7 +2244,7 @@ function TimelineEditor({
             timelineRootRef.current?.setPointerCapture(event.pointerId);
           }}
         />
-        <div className="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/80 px-2 py-2">
+        <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.035] px-2 py-2 shadow-inner shadow-black/20">
           <TimelineIconButton
             active={isMasterPlaying}
             label={isMasterPlaying ? "Pause all timelines" : "Play all timelines"}
@@ -2261,7 +2263,7 @@ function TimelineEditor({
             step={1 / 60}
             value={timelineTime}
             onChange={(event) => onSeek(Number(event.target.value))}
-            className="min-w-0 flex-1 accent-sky-400"
+            className="min-w-0 flex-1 accent-cyan-300"
           />
           <label
             className="flex items-center gap-2 text-zinc-500"
@@ -2276,7 +2278,7 @@ function TimelineEditor({
               step={0.05}
               value={timelineZoom}
               onChange={(event) => onTimelineZoomChange(Number(event.target.value))}
-              className="w-28 accent-sky-400"
+              className="w-28 accent-cyan-300"
             />
             <span className="w-8 text-right text-[11px] font-semibold tabular-nums text-zinc-500">
               {Math.round(timelineZoom * 100)}%
@@ -2290,7 +2292,7 @@ function TimelineEditor({
                 key={movement.id}
                 type="button"
                 onClick={() => onAddMovementToTrack(movement)}
-                className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs font-semibold text-zinc-200 transition hover:border-sky-400 hover:bg-zinc-800"
+                className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-white/10 bg-zinc-900/75 px-2 text-xs font-semibold text-zinc-200 transition hover:border-cyan-300/60 hover:bg-zinc-800"
               >
                 <span
                   className={`grid h-5 w-5 place-items-center rounded text-[9px] font-bold ${movement.colorClass}`}
@@ -3437,7 +3439,7 @@ export default function Home() {
   );
 
   return (
-    <main className="flex min-h-screen bg-zinc-950">
+    <main className="flex min-h-screen flex-col overflow-y-auto bg-zinc-950 text-zinc-100 lg:flex-row lg:overflow-hidden">
       <DeviceSidebar
         canvasBackgroundColor={canvasBackgroundColor}
         onCanvasBackgroundColorChange={setCanvasBackgroundColor}
@@ -3451,12 +3453,12 @@ export default function Home() {
         onWebsiteChange={handleWebsiteChange}
       />
       <section
-        className="flex h-screen min-w-0 flex-1 flex-col"
+        className="flex min-h-[720px] min-w-0 flex-1 flex-col lg:h-screen lg:min-h-0"
         style={{ backgroundColor: canvasBackgroundColor }}
       >
         <div
           ref={stageRef}
-          className="relative min-h-0 flex-1 [&_canvas]:h-full [&_canvas]:w-full"
+          className="relative min-h-0 flex-1 overflow-hidden [&_canvas]:h-full [&_canvas]:w-full"
           style={{
             cursor: stageCursor,
             overscrollBehavior: "contain",
@@ -3611,7 +3613,7 @@ export default function Home() {
           onTogglePresetList={() => setIsTransitionsOpen((isOpen) => !isOpen)}
         />
       </section>
-      <aside className="flex h-screen w-16 shrink-0 flex-col items-center gap-3 border-l border-zinc-800 bg-zinc-950 py-4 text-zinc-100">
+      <aside className="flex h-16 w-full shrink-0 flex-row items-center justify-center gap-3 border-t border-white/10 bg-zinc-950/95 px-4 text-zinc-100 shadow-2xl shadow-black/30 lg:h-screen lg:w-16 lg:flex-col lg:border-l lg:border-t-0 lg:px-0 lg:py-4">
         <ToolButton
           active={isRotateMode}
           label={isRotateMode ? "Rotation mode" : "Website interaction mode"}
@@ -3641,14 +3643,14 @@ export default function Home() {
       {recordingError ? (
         <div
           role="alert"
-          className="fixed bottom-5 right-20 z-40 max-w-sm rounded-md border border-red-500/60 bg-red-950 px-4 py-3 text-sm text-red-100"
+          className="fixed bottom-5 right-20 z-40 max-w-sm rounded-lg border border-red-400/60 bg-red-950/95 px-4 py-3 text-sm text-red-100 shadow-2xl shadow-black/30"
         >
           {recordingError}
         </div>
       ) : null}
       {recordedVideoUrl ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6">
-          <div className="w-full max-w-3xl rounded-md border border-zinc-800 bg-zinc-950 p-4 text-zinc-100 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm">
+          <div className="w-full max-w-3xl rounded-lg border border-white/10 bg-zinc-950 p-4 text-zinc-100 shadow-2xl">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
                 Recording Preview
@@ -3658,13 +3660,13 @@ export default function Home() {
                 aria-label="Close preview"
                 title="Close preview"
                 onClick={closeRecordingPreview}
-                className="grid h-9 w-9 place-items-center rounded-md border border-zinc-800 bg-zinc-950 text-zinc-100 transition hover:border-zinc-500 hover:bg-zinc-900"
+                className="grid h-9 w-9 place-items-center rounded-md border border-white/10 bg-zinc-900/70 text-zinc-100 transition hover:border-white/25 hover:bg-zinc-800"
               >
                 <CloseIcon />
               </button>
             </div>
             <video
-              className="aspect-video w-full rounded-md bg-black"
+              className="aspect-video w-full rounded-md bg-black shadow-inner shadow-black"
               controls
               src={recordedVideoUrl}
             />
@@ -3674,7 +3676,7 @@ export default function Home() {
                 title="Download recording"
                 href={recordedVideoUrl}
                 download={recordedFileName}
-                className="grid h-11 w-11 place-items-center rounded-md border border-sky-300 bg-sky-400 text-zinc-950 transition hover:bg-sky-300"
+                className="grid h-11 w-11 place-items-center rounded-md border border-cyan-300 bg-cyan-300 text-zinc-950 transition hover:bg-cyan-200"
               >
                 <DownloadIcon />
               </a>
