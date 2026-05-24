@@ -910,7 +910,7 @@ const clampModelPosition = (
 ): [number, number, number] => [
   MathUtils.clamp(position[0], -MODEL_POSITION_LIMIT, MODEL_POSITION_LIMIT),
   MathUtils.clamp(position[1], -MODEL_POSITION_LIMIT, MODEL_POSITION_LIMIT),
-  MathUtils.clamp(position[2], -MODEL_DEPTH_LIMIT, MODEL_DEPTH_LIMIT),
+  Math.max(position[2], -MODEL_DEPTH_LIMIT),
 ];
 
 const improveTextureQuality = (scene: Object3D, maxAnisotropy: number) => {
@@ -1300,6 +1300,8 @@ const WebsiteScreen = memo(function WebsiteScreen({
           pointerEvents: "auto",
           transform: "translate3d(0, 0, 0)",
           transformStyle: "preserve-3d",
+          userSelect: isRotateMode ? "none" : "auto",
+          WebkitUserSelect: isRotateMode ? "none" : "auto",
           willChange: "transform, opacity",
         }}
         onPointerDown={(event) => {
@@ -1357,6 +1359,8 @@ const WebsiteScreen = memo(function WebsiteScreen({
               pointerEvents: isRotateMode ? "none" : "auto",
               textRendering: "geometricPrecision",
               transform: "translate3d(0, 0, 0)",
+              userSelect: isRotateMode ? "none" : "auto",
+              WebkitUserSelect: isRotateMode ? "none" : "auto",
               willChange: "transform",
             }}
           />
@@ -1375,6 +1379,8 @@ const WebsiteScreen = memo(function WebsiteScreen({
               display: "block",
               pointerEvents: "none",
               transform: "translate3d(0, 0, 0)",
+              userSelect: "none",
+              WebkitUserSelect: "none",
               willChange: "transform",
             }}
           />
@@ -1394,6 +1400,8 @@ const WebsiteScreen = memo(function WebsiteScreen({
               display: "block",
               pointerEvents: isRotateMode ? "none" : "auto",
               transform: "translate3d(0, 0, 0)",
+              userSelect: isRotateMode ? "none" : "auto",
+              WebkitUserSelect: isRotateMode ? "none" : "auto",
               willChange: "transform",
             }}
             onEnded={() => {
@@ -3492,6 +3500,8 @@ export default function Home() {
             cursor: stageCursor,
             overscrollBehavior: "contain",
             touchAction: "none",
+            userSelect: isRotateMode ? "none" : "auto",
+            WebkitUserSelect: isRotateMode ? "none" : "auto",
           }}
           onPointerDown={handleStagePointerDown}
           onPointerLeave={handleStagePointerEnd}
