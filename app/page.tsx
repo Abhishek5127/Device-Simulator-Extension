@@ -1,6 +1,7 @@
 "use client";
 import {
   memo,
+  type RefObject,
   Suspense,
   type ReactNode,
   useCallback,
@@ -1251,6 +1252,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
   onDeviceDragStart,
   onDeviceHoverEnd,
   onDeviceHoverStart,
+  occludeRef,
   onMediaDurationChange,
   onMediaEnded,
   onMediaPlayStateChange,
@@ -1271,6 +1273,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
   onDeviceDragStart: (button?: number) => void;
   onDeviceHoverEnd: () => void;
   onDeviceHoverStart: () => void;
+  occludeRef?: RefObject<Object3D>;
   onMediaDurationChange: (duration: number) => void;
   onMediaEnded: () => void;
   onMediaPlayStateChange: (isPlaying: boolean) => void;
@@ -1282,6 +1285,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
   const isDraggingScreen = useRef(false);
   const screenElementRef = useRef<HTMLDivElement | null>(null);
   const screenGroupRef = useRef<Group | null>(null);
+  const screenOccludedRef = useRef(false);
   const screenIsFacingCameraRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenNormalRef = useRef(new Vector3());
@@ -1293,6 +1297,21 @@ const WebsiteScreen = memo(function WebsiteScreen({
     event.preventDefault();
     event.stopPropagation();
   };
+
+  const updateScreenVisibility = useCallback(() => {
+    const screenElement = screenElementRef.current;
+
+    if (!screenElement) {
+      return;
+    }
+
+    const isVisible =
+      screenIsFacingCameraRef.current && !screenOccludedRef.current;
+
+    screenElement.style.opacity = isVisible ? "1" : "0";
+    screenElement.style.pointerEvents = isVisible ? "auto" : "none";
+    screenElement.style.visibility = isVisible ? "visible" : "hidden";
+  }, []);
 
   useFrame(() => {
     const screenElement = screenElementRef.current;
@@ -1314,16 +1333,14 @@ const WebsiteScreen = memo(function WebsiteScreen({
 
     const facingScore = screenNormal.dot(cameraDirection);
     const wasFacingCamera = screenIsFacingCameraRef.current;
-    const isFacingCamera = facingScore > 0.12;
+    const isFacingCamera = facingScore > (device.id === 3 ? 0.38 : 0.12);
 
     if (isFacingCamera === wasFacingCamera) {
       return;
     }
 
     screenIsFacingCameraRef.current = isFacingCamera;
-    screenElement.style.opacity = isFacingCamera ? "1" : "0";
-    screenElement.style.pointerEvents = isFacingCamera ? "auto" : "none";
-    screenElement.style.visibility = isFacingCamera ? "visible" : "hidden";
+    updateScreenVisibility();
   }, -0.5);
 
   useEffect(() => {
@@ -1367,6 +1384,15 @@ const WebsiteScreen = memo(function WebsiteScreen({
         center
         scale={screen.scale}
         eps={0.012}
+        occlude={occludeRef ? [occludeRef] : true}
+        onOcclude={(hidden) => {
+          if (hidden === screenOccludedRef.current) {
+            return;
+          }
+
+          screenOccludedRef.current = hidden;
+          updateScreenVisibility();
+        }}
         zIndexRange={[1, 0]}
       >
       <div
@@ -1564,7 +1590,9 @@ const DeviceModel = memo(function DeviceModel({
   const { scene } = useGLTF(device.modelPath);
   const { camera, gl } = useThree();
   const hitTarget = DEVICE_HIT_TARGETS[device.id] ?? DEVICE_HIT_TARGETS[1];
+  const interactionRadius = Math.max(...hitTarget.scale);
   const groupRef = useRef<Group | null>(null);
+  const sceneObjectRef = useRef<Object3D>(scene);
   const angularVelocityRef = useRef(new Vector3());
   const cameraRightRef = useRef(new Vector3());
   const cameraUpRef = useRef(new Vector3());
@@ -1638,14 +1666,12 @@ const DeviceModel = memo(function DeviceModel({
   );
 
   const stabilizeTargetQuaternion = useCallback(() => {
+    targetQuaternionRef.current.normalize();
     const euler = tempEulerRef.current.setFromQuaternion(
       targetQuaternionRef.current,
       "XYZ",
     );
 
-    euler.x = MathUtils.clamp(euler.x, -1.2, 1.2);
-    euler.z = MathUtils.clamp(euler.z, -0.72, 0.72);
-    targetQuaternionRef.current.setFromEuler(euler).normalize();
     targetRotationRef.current = [euler.x, euler.y, euler.z];
   }, []);
 
@@ -1753,6 +1779,7 @@ const DeviceModel = memo(function DeviceModel({
   }, [modelPositionOffset]);
 
   useEffect(() => {
+    sceneObjectRef.current = scene;
     improveTextureQuality(scene, gl.capabilities.getMaxAnisotropy());
   }, [gl, scene]);
 
@@ -2113,8 +2140,11 @@ const DeviceModel = memo(function DeviceModel({
         onDeviceDragEnd();
       }}
     >
-      <mesh position={hitTarget.position} scale={hitTarget.scale}>
-        <boxGeometry args={[1, 1, 1]} />
+      <mesh
+        position={hitTarget.position}
+        scale={[interactionRadius, interactionRadius, interactionRadius]}
+      >
+        <sphereGeometry args={[1, 32, 16]} />
         <meshBasicMaterial
           color="#ffffff"
           depthWrite={false}
@@ -2209,6 +2239,7 @@ const DeviceModel = memo(function DeviceModel({
         }}
         onDeviceHoverEnd={onDeviceHoverEnd}
         onDeviceHoverStart={onDeviceHoverStart}
+        occludeRef={sceneObjectRef}
         onMediaDurationChange={onMediaDurationChange}
         onMediaEnded={onMediaEnded}
         onMediaPlayStateChange={onMediaPlayStateChange}
