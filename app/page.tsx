@@ -14,6 +14,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import {
   ACESFilmicToneMapping,
+  Euler,
   LinearFilter,
   LinearMipmapLinearFilter,
   MathUtils,
@@ -198,6 +199,17 @@ type ClipEditState = {
   kind: TimelineTrackKind;
   mode: ClipEditMode;
   pointerX: number;
+};
+
+type ManipulationIntent = "free" | "pan";
+
+type ManipulationState = {
+  intent: ManipulationIntent;
+  localPoint: [number, number, number];
+};
+type DeviceDragModifiers = {
+  altKey?: boolean;
+  shiftKey?: boolean;
 };
 
 const MOTION_PROFILES: MotionProfile[] = [
@@ -1251,8 +1263,12 @@ const WebsiteScreen = memo(function WebsiteScreen({
   mediaPlaySignal: number;
   screenContent: ScreenContent;
   onDeviceDragEnd: () => void;
-  onDeviceDragMove: (movementX: number, movementY: number) => void;
-  onDeviceDragStart: () => void;
+  onDeviceDragMove: (
+    movementX: number,
+    movementY: number,
+    modifiers?: DeviceDragModifiers,
+  ) => void;
+  onDeviceDragStart: (button?: number) => void;
   onDeviceHoverEnd: () => void;
   onDeviceHoverStart: () => void;
   onMediaDurationChange: (duration: number) => void;
@@ -1383,7 +1399,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
           isDraggingScreen.current = true;
           event.currentTarget.setPointerCapture(event.pointerId);
           onDeviceHoverStart();
-          onDeviceDragStart();
+          onDeviceDragStart(event.button);
         }}
         onPointerEnter={() => {
           if (isRotateMode) {
@@ -1401,7 +1417,10 @@ const WebsiteScreen = memo(function WebsiteScreen({
           }
 
           stopScreenEvent(event);
-          onDeviceDragMove(event.movementX, event.movementY);
+          onDeviceDragMove(event.movementX, event.movementY, {
+            altKey: event.altKey,
+            shiftKey: event.shiftKey,
+          });
         }}
         onPointerUp={(event) => {
           if (!isDraggingScreen.current) {
@@ -1440,7 +1459,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
             key={screenContent.url}
             alt=""
             src={screenContent.url}
-            className="h-full w-full bg-black object-cover"
+            className="h-full w-full bg-black object-contain"
             draggable={false}
             style={{
               backfaceVisibility: "hidden",
@@ -1459,7 +1478,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
             key={screenContent.url}
             ref={videoRef}
             src={screenContent.url}
-            className="h-full w-full bg-black object-cover"
+            className="h-full w-full bg-black object-contain"
             controls={!isRotateMode}
             playsInline
             preload="auto"
@@ -1543,18 +1562,32 @@ const DeviceModel = memo(function DeviceModel({
   onMediaPlayStateChange: (isPlaying: boolean) => void;
 }) {
   const { scene } = useGLTF(device.modelPath);
-  const { gl } = useThree();
+  const { camera, gl } = useThree();
   const hitTarget = DEVICE_HIT_TARGETS[device.id] ?? DEVICE_HIT_TARGETS[1];
   const groupRef = useRef<Group | null>(null);
+  const angularVelocityRef = useRef(new Vector3());
+  const cameraRightRef = useRef(new Vector3());
+  const cameraUpRef = useRef(new Vector3());
+  const currentQuaternionRef = useRef(new Quaternion());
   const currentRotationRef = useRef<[number, number, number]>([
     ...DEFAULT_MODEL_ROTATION,
   ]);
   const currentPositionRef = useRef<[number, number, number]>([
     ...DEFAULT_MODEL_POSITION,
   ]);
+  const dragStateRef = useRef<ManipulationState>({
+    intent: "free",
+    localPoint: [0, 0, 0],
+  });
+  const localPointRef = useRef(new Vector3());
   const modelPositionOffsetRef = useRef<[number, number, number]>([
     ...modelPositionOffset,
   ]);
+  const panDeltaRef = useRef(new Vector3());
+  const targetQuaternionRef = useRef(new Quaternion());
+  const tempEulerRef = useRef(new Euler(0, 0, 0, "XYZ"));
+  const tempQuaternionRef = useRef(new Quaternion());
+  const tempVectorRef = useRef(new Vector3());
 
   const movementAnimationRef = useRef<{
     basePosition: [number, number, number];
@@ -1567,25 +1600,153 @@ const DeviceModel = memo(function DeviceModel({
     toPosition: [number, number, number];
     toRotation: [number, number, number];
   } | null>(null);
-  const rotationVelocityRef = useRef<[number, number, number]>([0, 0, 0]);
   const targetRotationRef = useRef<[number, number, number]>([
     ...DEFAULT_MODEL_ROTATION,
   ]);
 
-  const rotateDevice = useCallback((movementX: number, movementY: number) => {
-    movementAnimationRef.current = null;
-    const targetRotation = targetRotationRef.current;
-    const rotationVelocity = rotationVelocityRef.current;
-    const gestureGain =
-      speedProfile.spinGain * motionProfile.gestureBoost * 0.65;
+  const getLocalInteractionPoint = useCallback(
+    (worldPoint: Vector3): [number, number, number] => {
+      const group = groupRef.current;
+      const localPoint = localPointRef.current.copy(worldPoint);
 
-    rotationVelocity[0] +=
-      movementY * MODEL_ROTATION_SENSITIVITY * gestureGain * 0.18;
-    rotationVelocity[1] +=
-      movementX * MODEL_ROTATION_SENSITIVITY * gestureGain * 0.18;
-    targetRotation[0] += movementY * MODEL_ROTATION_SENSITIVITY * gestureGain;
-    targetRotation[1] += movementX * MODEL_ROTATION_SENSITIVITY * gestureGain;
-  }, [motionProfile, speedProfile]);
+      if (group) {
+        group.worldToLocal(localPoint);
+      }
+
+      return [localPoint.x, localPoint.y, localPoint.z];
+    },
+    [],
+  );
+
+  const getManipulationIntent = useCallback(
+    (): ManipulationIntent => "free",
+    [],
+  );
+
+  const beginManipulation = useCallback(
+    (worldPoint: Vector3, overrideIntent?: ManipulationIntent) => {
+      const localPoint = getLocalInteractionPoint(worldPoint);
+
+      dragStateRef.current = {
+        intent: overrideIntent ?? getManipulationIntent(),
+        localPoint,
+      };
+      angularVelocityRef.current.set(0, 0, 0);
+      movementAnimationRef.current = null;
+    },
+    [getLocalInteractionPoint, getManipulationIntent],
+  );
+
+  const stabilizeTargetQuaternion = useCallback(() => {
+    const euler = tempEulerRef.current.setFromQuaternion(
+      targetQuaternionRef.current,
+      "XYZ",
+    );
+
+    euler.x = MathUtils.clamp(euler.x, -1.2, 1.2);
+    euler.z = MathUtils.clamp(euler.z, -0.72, 0.72);
+    targetQuaternionRef.current.setFromEuler(euler).normalize();
+    targetRotationRef.current = [euler.x, euler.y, euler.z];
+  }, []);
+
+  const applyAxisRotation = useCallback(
+    (axis: Vector3, angle: number) => {
+      if (Math.abs(angle) < 0.00001) {
+        return;
+      }
+
+      const deltaQuaternion = tempQuaternionRef.current.setFromAxisAngle(
+        axis.normalize(),
+        angle,
+      );
+
+      targetQuaternionRef.current.premultiply(deltaQuaternion).normalize();
+    },
+    [],
+  );
+
+  const rotateDevice = useCallback(
+    (
+      movementX: number,
+      movementY: number,
+      modifiers: DeviceDragModifiers = {},
+    ) => {
+      movementAnimationRef.current = null;
+      const intent = dragStateRef.current.intent;
+      const isPrecision = Boolean(modifiers.shiftKey);
+      const jitterThreshold = isPrecision ? 0.04 : 0.18;
+      const filteredX = Math.abs(movementX) < jitterThreshold ? 0 : movementX;
+      const filteredY = Math.abs(movementY) < jitterThreshold ? 0 : movementY;
+
+      if (!filteredX && !filteredY) {
+        return;
+      }
+
+      const gestureGain =
+        speedProfile.spinGain *
+        motionProfile.gestureBoost *
+        (isPrecision ? 0.28 : 0.72);
+      const rotationSensitivity = MODEL_ROTATION_SENSITIVITY * gestureGain;
+      const panSensitivity = 0.0026 * (isPrecision ? 0.35 : 1);
+      const cameraRight = cameraRightRef.current
+        .set(1, 0, 0)
+        .applyQuaternion(camera.quaternion)
+        .normalize();
+      const cameraUp = cameraUpRef.current
+        .set(0, 1, 0)
+        .applyQuaternion(camera.quaternion)
+        .normalize();
+
+      if (intent === "pan") {
+        const panDelta = panDeltaRef.current
+          .copy(cameraRight)
+          .multiplyScalar(filteredX * panSensitivity)
+          .addScaledVector(cameraUp, -filteredY * panSensitivity);
+        const nextPosition = clampModelPosition([
+          modelPositionOffsetRef.current[0] + panDelta.x,
+          modelPositionOffsetRef.current[1] + panDelta.y,
+          modelPositionOffsetRef.current[2] + panDelta.z,
+        ]);
+
+        modelPositionOffsetRef.current = nextPosition;
+        currentPositionRef.current = [...nextPosition];
+        onModelPositionCommit(nextPosition);
+        return;
+      }
+
+      const yawAngle = filteredX * rotationSensitivity;
+      const pitchAngle = filteredY * rotationSensitivity;
+
+      applyAxisRotation(cameraUp, yawAngle);
+      applyAxisRotation(cameraRight, pitchAngle);
+
+      if (modifiers.altKey) {
+        const rollAxis = tempVectorRef.current
+          .copy(cameraRight)
+          .cross(cameraUp)
+          .normalize();
+
+        applyAxisRotation(
+          rollAxis,
+          (filteredX - filteredY) * rotationSensitivity * 0.16,
+        );
+      }
+
+      stabilizeTargetQuaternion();
+      angularVelocityRef.current
+        .copy(cameraUp)
+        .multiplyScalar(yawAngle * 18)
+        .addScaledVector(cameraRight, pitchAngle * 18);
+    },
+    [
+      applyAxisRotation,
+      camera,
+      motionProfile,
+      onModelPositionCommit,
+      speedProfile,
+      stabilizeTargetQuaternion,
+    ],
+  );
 
   useLayoutEffect(() => {
     modelPositionOffsetRef.current = [...modelPositionOffset];
@@ -1605,10 +1766,14 @@ const DeviceModel = memo(function DeviceModel({
     currentRotationRef.current = [...nextRotation];
     currentPositionRef.current = [...nextPosition];
     targetRotationRef.current = [...nextRotation];
+    currentQuaternionRef.current.setFromEuler(
+      tempEulerRef.current.set(...nextRotation, "XYZ"),
+    );
+    targetQuaternionRef.current.copy(currentQuaternionRef.current);
     movementAnimationRef.current = null;
-    rotationVelocityRef.current = [0, 0, 0];
+    angularVelocityRef.current.set(0, 0, 0);
     groupRef.current?.position.set(...nextPosition);
-    groupRef.current?.rotation.set(...nextRotation);
+    groupRef.current?.quaternion.copy(currentQuaternionRef.current);
   }, [device.id, resetSignal]);
 
   useEffect(() => {
@@ -1675,23 +1840,39 @@ const DeviceModel = memo(function DeviceModel({
       return;
     }
 
-    const rotationVelocity = rotationVelocityRef.current;
-    const targetRotation = targetRotationRef.current;
     const gain =
       MODEL_ROTATION_SENSITIVITY *
       speedProfile.gestureGain *
       speedProfile.spinGain *
       motionProfile.gestureBoost *
       0.65;
+    const cameraRight = cameraRightRef.current
+      .set(1, 0, 0)
+      .applyQuaternion(camera.quaternion)
+      .normalize();
+    const cameraUp = cameraUpRef.current
+      .set(0, 1, 0)
+      .applyQuaternion(camera.quaternion)
+      .normalize();
+    const yawAngle = gestureImpulse.deltaX * gain * 1.2;
+    const pitchAngle = gestureImpulse.deltaY * gain * 1.2;
 
-    rotationVelocity[0] += gestureImpulse.deltaY * gain;
-    rotationVelocity[1] += gestureImpulse.deltaX * gain;
-    rotationVelocity[2] += (gestureImpulse.deltaX - gestureImpulse.deltaY) * gain * 0.18;
-    targetRotation[0] += gestureImpulse.deltaY * gain * 1.45;
-    targetRotation[1] += gestureImpulse.deltaX * gain * 1.45;
-    targetRotation[2] +=
-      (gestureImpulse.deltaX - gestureImpulse.deltaY) * gain * 0.25;
-  }, [gestureImpulse, motionProfile, speedProfile]);
+    movementAnimationRef.current = null;
+    applyAxisRotation(cameraUp, yawAngle);
+    applyAxisRotation(cameraRight, pitchAngle);
+    stabilizeTargetQuaternion();
+    angularVelocityRef.current
+      .copy(cameraUp)
+      .multiplyScalar(yawAngle * 10)
+      .addScaledVector(cameraRight, pitchAngle * 10);
+  }, [
+    applyAxisRotation,
+    camera,
+    gestureImpulse,
+    motionProfile,
+    speedProfile,
+    stabilizeTargetQuaternion,
+  ]);
 
   useFrame((_, delta) => {
     const group = groupRef.current;
@@ -1717,9 +1898,13 @@ const DeviceModel = memo(function DeviceModel({
       currentRotationRef.current = [...sampledRotation];
       currentPositionRef.current = [...sampledPosition];
       targetRotationRef.current = [...sampledRotation];
-      rotationVelocityRef.current = [0, 0, 0];
+      currentQuaternionRef.current.setFromEuler(
+        tempEulerRef.current.set(...sampledRotation, "XYZ"),
+      );
+      targetQuaternionRef.current.copy(currentQuaternionRef.current);
+      angularVelocityRef.current.set(0, 0, 0);
       group.position.set(...sampledPosition);
-      group.rotation.set(...sampledRotation);
+      group.quaternion.copy(currentQuaternionRef.current);
       return;
     }
 
@@ -1789,10 +1974,15 @@ const DeviceModel = memo(function DeviceModel({
       if (progress >= 1) {
         targetRotationRef.current = [...movementAnimation.toRotation];
         currentRotationRef.current = [...movementAnimation.toRotation];
+        currentQuaternionRef.current.setFromEuler(
+          tempEulerRef.current.set(...movementAnimation.toRotation, "XYZ"),
+        );
+        targetQuaternionRef.current.copy(currentQuaternionRef.current);
+        angularVelocityRef.current.set(0, 0, 0);
         currentPositionRef.current = [...movementAnimation.toPosition];
         modelPositionOffsetRef.current = [...movementAnimation.toPosition];
         group.position.set(...movementAnimation.toPosition);
-        group.rotation.set(...movementAnimation.toRotation);
+        group.quaternion.copy(currentQuaternionRef.current);
         onModelPositionCommit(movementAnimation.toPosition);
         movementAnimationRef.current = null;
       }
@@ -1800,34 +1990,27 @@ const DeviceModel = memo(function DeviceModel({
       return;
     }
 
-    const currentRotation = currentRotationRef.current;
-    const targetRotation = targetRotationRef.current;
-    const rotationVelocity = rotationVelocityRef.current;
+    const angularVelocity = angularVelocityRef.current;
+    const targetQuaternion = targetQuaternionRef.current;
+    const currentQuaternion = currentQuaternionRef.current;
 
-    targetRotation[0] += rotationVelocity[0] * delta;
-    targetRotation[1] += rotationVelocity[1] * delta;
-    targetRotation[2] += rotationVelocity[2] * delta;
-    rotationVelocity[0] = MathUtils.damp(rotationVelocity[0], 0, 4.4, delta);
-    rotationVelocity[1] = MathUtils.damp(rotationVelocity[1], 0, 4.4, delta);
-    rotationVelocity[2] = MathUtils.damp(rotationVelocity[2], 0, 4.4, delta);
+    if (!isDraggingDevice && angularVelocity.lengthSq() > 0.000001) {
+      const momentumAxis = tempVectorRef.current.copy(angularVelocity);
+      const momentumAngle = momentumAxis.length() * delta;
 
-    currentRotation[0] = MathUtils.damp(
-      currentRotation[0],
-      targetRotation[0],
-      motionProfile.settleDamping,
-      delta,
-    );
-    currentRotation[1] = MathUtils.damp(
-      currentRotation[1],
-      targetRotation[1],
-      motionProfile.settleDamping,
-      delta,
-    );
-    currentRotation[2] = MathUtils.damp(
-      currentRotation[2],
-      targetRotation[2],
-      motionProfile.settleDamping,
-      delta,
+      applyAxisRotation(momentumAxis.normalize(), momentumAngle);
+      stabilizeTargetQuaternion();
+    }
+
+    angularVelocity.multiplyScalar(Math.exp(-7.5 * delta));
+
+    if (angularVelocity.lengthSq() < 0.000001) {
+      angularVelocity.set(0, 0, 0);
+    }
+
+    currentQuaternion.slerp(
+      targetQuaternion,
+      1 - Math.exp(-motionProfile.settleDamping * delta),
     );
 
     const targetPosition: [number, number, number] = [
@@ -1861,11 +2044,12 @@ const DeviceModel = memo(function DeviceModel({
       currentPosition[1],
       currentPosition[2],
     );
-    group.rotation.set(
-      currentRotation[0],
-      currentRotation[1],
-      currentRotation[2],
-    );
+    group.quaternion.copy(currentQuaternion);
+    currentRotationRef.current = [
+      group.rotation.x,
+      group.rotation.y,
+      group.rotation.z,
+    ];
   }, -1);
 
   return (
@@ -1880,6 +2064,10 @@ const DeviceModel = memo(function DeviceModel({
 
         event.stopPropagation();
         (event.target as Element | null)?.setPointerCapture(event.pointerId);
+        beginManipulation(
+          event.point,
+          event.button === 1 || event.button === 2 ? "pan" : undefined,
+        );
         onDeviceDragStart();
       }}
       onPointerMove={(event) => {
@@ -1890,7 +2078,14 @@ const DeviceModel = memo(function DeviceModel({
         event.stopPropagation();
 
         if (isDraggingDevice) {
-          rotateDevice(event.nativeEvent.movementX, event.nativeEvent.movementY);
+          rotateDevice(
+            event.nativeEvent.movementX,
+            event.nativeEvent.movementY,
+            {
+              altKey: event.nativeEvent.altKey,
+              shiftKey: event.nativeEvent.shiftKey,
+            },
+          );
           return;
         }
 
@@ -1935,6 +2130,10 @@ const DeviceModel = memo(function DeviceModel({
           onPointerDown={(event) => {
             event.stopPropagation();
             (event.target as Element | null)?.setPointerCapture(event.pointerId);
+            beginManipulation(
+              event.point,
+              event.button === 1 || event.button === 2 ? "pan" : "free",
+            );
             onDeviceHoverStart();
             onDeviceDragStart();
           }}
@@ -1945,6 +2144,10 @@ const DeviceModel = memo(function DeviceModel({
               rotateDevice(
                 event.nativeEvent.movementX,
                 event.nativeEvent.movementY,
+                {
+                  altKey: event.nativeEvent.altKey,
+                  shiftKey: event.nativeEvent.shiftKey,
+                },
               );
             }
           }}
@@ -1996,7 +2199,14 @@ const DeviceModel = memo(function DeviceModel({
         screenContent={screenContent}
         onDeviceDragEnd={onDeviceDragEnd}
         onDeviceDragMove={rotateDevice}
-        onDeviceDragStart={onDeviceDragStart}
+        onDeviceDragStart={(button = 0) => {
+          dragStateRef.current = {
+            intent: button === 1 || button === 2 ? "pan" : "free",
+            localPoint: [0, 0, 0],
+          };
+          angularVelocityRef.current.set(0, 0, 0);
+          onDeviceDragStart();
+        }}
         onDeviceHoverEnd={onDeviceHoverEnd}
         onDeviceHoverStart={onDeviceHoverStart}
         onMediaDurationChange={onMediaDurationChange}
@@ -3589,6 +3799,7 @@ export default function Home() {
             WebkitUserSelect: isRotateMode ? "none" : "auto",
           }}
           onPointerDown={handleStagePointerDown}
+          onContextMenu={(event) => event.preventDefault()}
           onPointerLeave={handleStagePointerEnd}
           onPointerMove={handleStagePointerMove}
           onPointerUp={handleStagePointerEnd}
