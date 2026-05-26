@@ -111,7 +111,10 @@ const getColorPickerValue = (value) =>
 const DeviceSidebar = ({
   canvasBackgroundColor,
   onCanvasBackgroundColorChange,
+  mediaTracks,
+  onSelectedMediaTrackChange,
   selectedDeviceId,
+  selectedMediaTrackId,
   onSelectDevice,
   screenContentName,
   screenContentType,
@@ -124,6 +127,7 @@ const DeviceSidebar = ({
   const [draftCanvasBackgroundColor, setDraftCanvasBackgroundColor] = useState(
     canvasBackgroundColor,
   );
+  const availableMediaTracks = mediaTracks ?? [];
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -249,6 +253,24 @@ const DeviceSidebar = ({
             className="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/15"
           />
         </div>
+        {availableMediaTracks.length > 1 ? (
+          <label className="mt-3 block text-xs font-semibold text-zinc-400">
+            <span className="mb-1 block uppercase tracking-wide">Add to</span>
+            <select
+              value={selectedMediaTrackId}
+              onChange={(event) =>
+                onSelectedMediaTrackChange(event.target.value)
+              }
+              className="w-full rounded-md border border-white/10 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/15"
+            >
+              {availableMediaTracks.map((track) => (
+                <option key={track.id} value={track.id}>
+                  {track.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       <div className="mb-2 flex items-center justify-between px-1">

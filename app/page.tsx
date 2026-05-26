@@ -91,6 +91,11 @@ const DEVICE_HIT_TARGETS: Record<
     scale: [0.9, 1.35, 0.5],
   },
 };
+const MACBOOK_TRACKPAD_CONTROL = {
+  position: [0, -0.58, 0.24] as [number, number, number],
+  rotation: [-Math.PI / 2, 0, 0] as [number, number, number],
+  scale: [0.46, 0.3, 1] as [number, number, number],
+};
 type MotionProfileId =
   | "cinematic"
   | "fast"
@@ -173,8 +178,10 @@ type MediaTimelineClip = {
   enabled: boolean;
   kind: ScreenContent["type"];
   label: string;
+  mimeType?: string;
   start: number;
   trackId: string;
+  url: string;
 };
 
 type TimelineAnimationSample = {
@@ -967,7 +974,6 @@ function SceneCameraDefaults({
   controlsRef,
   deviceId,
   gestureImpulse,
-  isPointerOnDevice,
   motionProfile,
   movementPlaySignal,
   resetSignal,
@@ -978,7 +984,6 @@ function SceneCameraDefaults({
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
   deviceId: number;
   gestureImpulse: GestureImpulse;
-  isPointerOnDevice: boolean;
   motionProfile: MotionProfile;
   movementPlaySignal: number;
   resetSignal: number;
@@ -1073,8 +1078,8 @@ function SceneCameraDefaults({
     const entranceProgress = entrance.running
       ? easeOutExpo(Math.min(entrance.elapsed / 1.1, 1))
       : 1;
-    const idleOrbit = isPointerOnDevice ? 0.004 : motionProfile.cameraOrbit;
-    const idleDolly = isPointerOnDevice ? 0.006 : motionProfile.cameraDolly;
+    const idleOrbit = motionProfile.cameraOrbit;
+    const idleDolly = motionProfile.cameraDolly;
     const targetX =
       basePosition[0] +
       Math.sin(elapsedTime * 0.22) * idleOrbit +
@@ -1226,9 +1231,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
 
     const facingScore = screenNormal.dot(cameraDirection);
     const wasFacingCamera = screenIsFacingCameraRef.current;
-    const isFacingCamera = wasFacingCamera
-      ? facingScore > -0.08
-      : facingScore > 0.08;
+    const isFacingCamera = facingScore > 0.12;
 
     if (isFacingCamera === wasFacingCamera) {
       return;
@@ -1426,7 +1429,6 @@ const DeviceModel = memo(function DeviceModel({
   device,
   gestureImpulse,
   isDraggingDevice,
-  isPointerOnDevice,
   movementPlaySignal,
   motionProfile,
   isMediaPlaying,
@@ -1453,7 +1455,6 @@ const DeviceModel = memo(function DeviceModel({
   gestureImpulse: GestureImpulse;
   isDraggingDevice: boolean;
   isMediaPlaying: boolean;
-  isPointerOnDevice: boolean;
   movementPlaySignal: number;
   motionProfile: MotionProfile;
   isRotateMode: boolean;
@@ -1484,8 +1485,6 @@ const DeviceModel = memo(function DeviceModel({
   const currentPositionRef = useRef<[number, number, number]>([
     ...DEFAULT_MODEL_POSITION,
   ]);
-  const hoverInfluenceRef = useRef<[number, number]>([0, 0]);
-  const hoverTargetRef = useRef<[number, number]>([0, 0]);
   const modelPositionOffsetRef = useRef<[number, number, number]>([
     ...modelPositionOffset,
   ]);
@@ -1636,37 +1635,16 @@ const DeviceModel = memo(function DeviceModel({
 
     if (timelineSample) {
       movementAnimationRef.current = null;
-      const hoverInfluence = hoverInfluenceRef.current;
-      const hoverTarget = hoverTargetRef.current;
-
-      hoverInfluence[0] = MathUtils.damp(
-        hoverInfluence[0],
-        isPointerOnDevice ? hoverTarget[0] : 0,
-        10,
-        delta,
-      );
-      hoverInfluence[1] = MathUtils.damp(
-        hoverInfluence[1],
-        isPointerOnDevice ? hoverTarget[1] : 0,
-        10,
-        delta,
-      );
 
       const sampledRotation: [number, number, number] = [
-        timelineSample.rotation[0] + hoverInfluence[1] * 0.075,
-        timelineSample.rotation[1] + hoverInfluence[0] * 0.085,
-        timelineSample.rotation[2] - hoverInfluence[0] * 0.035,
+        timelineSample.rotation[0],
+        timelineSample.rotation[1],
+        timelineSample.rotation[2],
       ];
       const sampledPosition: [number, number, number] = [
-        modelPositionOffset[0] +
-        timelineSample.position[0] +
-        hoverInfluence[0] * 0.012,
-        modelPositionOffset[1] +
-        timelineSample.position[1] -
-        hoverInfluence[1] * 0.012,
-        modelPositionOffset[2] +
-        timelineSample.position[2] +
-        (isPointerOnDevice ? motionProfile.hoverLift : 0),
+        modelPositionOffset[0] + timelineSample.position[0],
+        modelPositionOffset[1] + timelineSample.position[1],
+        modelPositionOffset[2] + timelineSample.position[2],
       ];
 
       currentRotationRef.current = [...sampledRotation];
@@ -1758,21 +1736,7 @@ const DeviceModel = memo(function DeviceModel({
     const currentRotation = currentRotationRef.current;
     const targetRotation = targetRotationRef.current;
     const rotationVelocity = rotationVelocityRef.current;
-    const hoverInfluence = hoverInfluenceRef.current;
-    const hoverTarget = hoverTargetRef.current;
 
-    hoverInfluence[0] = MathUtils.damp(
-      hoverInfluence[0],
-      isPointerOnDevice ? hoverTarget[0] : 0,
-      10,
-      delta,
-    );
-    hoverInfluence[1] = MathUtils.damp(
-      hoverInfluence[1],
-      isPointerOnDevice ? hoverTarget[1] : 0,
-      10,
-      delta,
-    );
     targetRotation[0] += rotationVelocity[0] * delta;
     targetRotation[1] += rotationVelocity[1] * delta;
     targetRotation[2] += rotationVelocity[2] * delta;
@@ -1782,28 +1746,27 @@ const DeviceModel = memo(function DeviceModel({
 
     currentRotation[0] = MathUtils.damp(
       currentRotation[0],
-      targetRotation[0] + hoverInfluence[1] * 0.075,
+      targetRotation[0],
       motionProfile.settleDamping,
       delta,
     );
     currentRotation[1] = MathUtils.damp(
       currentRotation[1],
-      targetRotation[1] + hoverInfluence[0] * 0.085,
+      targetRotation[1],
       motionProfile.settleDamping,
       delta,
     );
     currentRotation[2] = MathUtils.damp(
       currentRotation[2],
-      targetRotation[2] - hoverInfluence[0] * 0.035,
+      targetRotation[2],
       motionProfile.settleDamping,
       delta,
     );
 
     const targetPosition: [number, number, number] = [
-      modelPositionOffset[0] + hoverInfluence[0] * 0.012,
-      modelPositionOffset[1] - hoverInfluence[1] * 0.012,
-      modelPositionOffset[2] +
-      (isPointerOnDevice ? motionProfile.hoverLift : 0),
+      modelPositionOffset[0],
+      modelPositionOffset[1],
+      modelPositionOffset[2],
     ];
     const currentPosition = currentPositionRef.current;
 
@@ -1864,14 +1827,8 @@ const DeviceModel = memo(function DeviceModel({
           return;
         }
 
-        hoverTargetRef.current = [
-          MathUtils.clamp(event.point.x, -1, 1),
-          MathUtils.clamp(event.point.y, -1, 1),
-        ];
       }}
       onPointerOut={() => {
-        hoverTargetRef.current = [0, 0];
-
         if (!isDraggingDevice) {
           onDeviceHoverEnd();
         }
@@ -1882,10 +1839,6 @@ const DeviceModel = memo(function DeviceModel({
         }
 
         event.stopPropagation();
-        hoverTargetRef.current = [
-          MathUtils.clamp(event.point.x, -1, 1),
-          MathUtils.clamp(event.point.y, -1, 1),
-        ];
         onDeviceHoverStart();
       }}
       onPointerUp={(event) => {
@@ -1907,6 +1860,57 @@ const DeviceModel = memo(function DeviceModel({
           transparent
         />
       </mesh>
+      {device.id === 3 ? (
+        <mesh
+          position={MACBOOK_TRACKPAD_CONTROL.position}
+          rotation={MACBOOK_TRACKPAD_CONTROL.rotation}
+          scale={MACBOOK_TRACKPAD_CONTROL.scale}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            (event.target as Element | null)?.setPointerCapture(event.pointerId);
+            onDeviceHoverStart();
+            onDeviceDragStart();
+          }}
+          onPointerMove={(event) => {
+            event.stopPropagation();
+
+            if (isDraggingDevice) {
+              rotateDevice(
+                event.nativeEvent.movementX,
+                event.nativeEvent.movementY,
+              );
+            }
+          }}
+          onPointerOut={() => {
+            if (!isDraggingDevice) {
+              onDeviceHoverEnd();
+            }
+          }}
+          onPointerOver={(event) => {
+            event.stopPropagation();
+            onDeviceHoverStart();
+          }}
+          onPointerUp={(event) => {
+            if (!isDraggingDevice) {
+              return;
+            }
+
+            event.stopPropagation();
+            (event.target as Element | null)?.releasePointerCapture(
+              event.pointerId,
+            );
+            onDeviceDragEnd();
+          }}
+        >
+          <planeGeometry args={[1, 1]} />
+          <meshBasicMaterial
+            color="#0f172a"
+            depthWrite={false}
+            opacity={0.18}
+            transparent
+          />
+        </mesh>
+      ) : null}
       <primitive
         object={scene}
         rotation={
@@ -2443,8 +2447,12 @@ export default function Home() {
       label: "Website",
       start: 0,
       trackId: DEFAULT_MEDIA_TRACK_ID,
+      url: DEFAULT_WEBSITE_URL,
     },
   ]);
+  const [selectedMediaTrackId, setSelectedMediaTrackId] = useState(
+    DEFAULT_MEDIA_TRACK_ID,
+  );
   const [transitionTrack, setTransitionTrack] = useState<TransitionClip[]>([]);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
   const [recordedFileName, setRecordedFileName] = useState(
@@ -2478,7 +2486,7 @@ export default function Home() {
     media: false,
     time: 0,
   });
-  const screenMediaObjectUrlRef = useRef<string | null>(null);
+  const screenMediaObjectUrlsRef = useRef<Set<string>>(new Set());
   const stageRef = useRef<HTMLDivElement | null>(null);
   const stageGestureScaleRef = useRef(1);
   const transitionClipIdRef = useRef(0);
@@ -2522,10 +2530,18 @@ export default function Home() {
         timelineTime <= clip.start + clip.duration,
     );
   }, [mediaClips, mediaTracks, timelineTime]);
+  const activeScreenContent: ScreenContent = activeMediaClip
+    ? {
+      label: activeMediaClip.label,
+      mimeType: activeMediaClip.mimeType,
+      type: activeMediaClip.kind,
+      url: activeMediaClip.url,
+    }
+    : screenContent;
   const mediaClipStart = activeMediaClip?.start ?? 0;
   const mediaTimelineTime = activeMediaClip
     ? timelineTime
-    : screenContent.type === "video"
+    : activeScreenContent.type === "video"
       ? 0
       : timelineTime;
   const timelineActiveAnimationClipId = useMemo(
@@ -2537,17 +2553,26 @@ export default function Home() {
     [timelineTime, transitionTrack],
   );
   const mediaTrackLabel =
-    screenContent.type === "website"
+    activeScreenContent.type === "website"
       ? "Website"
-      : screenContent.type === "image"
+      : activeScreenContent.type === "image"
         ? "Photo"
         : "Video";
   const mediaTrackSubtitle =
-    screenContent.type === "video"
-      ? formatMediaDuration(mediaDuration)
-      : screenContent.type === "image"
+    activeScreenContent.type === "video"
+      ? formatMediaDuration(activeMediaClip?.duration ?? mediaDuration)
+      : activeScreenContent.type === "image"
         ? "Still"
         : "Live page";
+  const selectedAppendMediaTrackId = mediaTracks.some(
+    (track) => track.id === selectedMediaTrackId,
+  )
+    ? selectedMediaTrackId
+    : mediaTracks[0]?.id ?? DEFAULT_MEDIA_TRACK_ID;
+  const shouldPlayActiveVideo =
+    (isMediaPlaying || isMasterPlaying || isMediaTimelinePlaying) &&
+    !!activeMediaClip &&
+    activeScreenContent.type === "video";
   const controlsEnabled = false;
   const stageCursor = isRotateMode
     ? isDraggingDevice || isDraggingBackground
@@ -2566,42 +2591,6 @@ export default function Home() {
   }, [isRotateMode]);
 
   useEffect(() => {
-    setMediaClips((currentClips) => {
-      const nextDuration =
-        screenContent.type === "video"
-          ? Math.max(mediaDuration || DEFAULT_STILL_DURATION, MIN_CLIP_DURATION)
-          : DEFAULT_STILL_DURATION;
-      const [firstClip] = currentClips;
-
-      if (!firstClip) {
-        mediaClipIdRef.current += 1;
-
-        return [
-          {
-            clipId: mediaClipIdRef.current,
-            duration: nextDuration,
-            enabled: true,
-            kind: screenContent.type,
-            label: screenContent.label,
-            start: 0,
-            trackId: mediaTracks[0]?.id ?? DEFAULT_MEDIA_TRACK_ID,
-          },
-        ];
-      }
-
-      return [
-        {
-          ...firstClip,
-          duration: nextDuration,
-          kind: screenContent.type,
-          label: screenContent.label,
-        },
-        ...currentClips.slice(1),
-      ];
-    });
-  }, [mediaDuration, mediaTracks, screenContent]);
-
-  useEffect(() => {
     playbackStateRef.current = {
       animation: isAnimationTimelinePlaying,
       duration: timelineDuration,
@@ -2618,10 +2607,8 @@ export default function Home() {
   ]);
 
   const revokeUploadedScreenMedia = () => {
-    if (screenMediaObjectUrlRef.current) {
-      URL.revokeObjectURL(screenMediaObjectUrlRef.current);
-      screenMediaObjectUrlRef.current = null;
-    }
+    screenMediaObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    screenMediaObjectUrlsRef.current.clear();
   };
 
   useEffect(() => {
@@ -3173,7 +3160,7 @@ export default function Home() {
     setIsMasterPlaying(shouldPlay);
     setIsAnimationTimelinePlaying(shouldPlay);
     setIsMediaTimelinePlaying(shouldPlay);
-    setIsMediaPlaying(shouldPlay && screenContent.type === "video");
+    setIsMediaPlaying(shouldPlay && activeScreenContent.type === "video");
     setMediaPlaySignal((currentSignal) => currentSignal + 1);
   };
 
@@ -3186,9 +3173,35 @@ export default function Home() {
     const shouldPlay = !isMediaTimelinePlaying;
 
     setIsMediaTimelinePlaying(shouldPlay);
-    setIsMediaPlaying(shouldPlay && screenContent.type === "video");
+    setIsMediaPlaying(shouldPlay && activeScreenContent.type === "video");
     setIsMasterPlaying(false);
     setMediaPlaySignal((currentSignal) => currentSignal + 1);
+  };
+
+  const appendMediaClip = (
+    content: ScreenContent,
+    duration = DEFAULT_STILL_DURATION,
+  ) => {
+    mediaClipIdRef.current += 1;
+
+    const trackId = selectedAppendMediaTrackId;
+
+    setMediaClips((currentClips) => [
+      ...currentClips,
+      {
+        clipId: mediaClipIdRef.current,
+        duration: Math.max(duration, MIN_CLIP_DURATION),
+        enabled: true,
+        kind: content.type,
+        label: content.label,
+        mimeType: content.mimeType,
+        start: snapTimelineTime(
+          getTimelineEnd(currentClips.filter((clip) => clip.trackId === trackId)),
+        ),
+        trackId,
+        url: content.url,
+      },
+    ]);
   };
 
   const updateTracks = (
@@ -3345,13 +3358,15 @@ export default function Home() {
   };
 
   const handleWebsiteChange = (url: string) => {
-    revokeUploadedScreenMedia();
-    setWebsiteUrl(url);
-    setScreenContent({
-      label: "Website",
+    const websiteContent: ScreenContent = {
+      label: new URL(url).hostname || "Website",
       type: "website",
       url,
-    });
+    };
+
+    setWebsiteUrl(url);
+    setScreenContent(websiteContent);
+    appendMediaClip(websiteContent);
     setIsMediaPlaying(false);
     setIsMediaTimelinePlaying(false);
     setIsMasterPlaying(false);
@@ -3366,17 +3381,17 @@ export default function Home() {
       return;
     }
 
-    revokeUploadedScreenMedia();
-
     const mediaUrl = URL.createObjectURL(file);
-
-    screenMediaObjectUrlRef.current = mediaUrl;
-    setScreenContent({
+    const mediaContent: ScreenContent = {
       label: file.name,
       mimeType: file.type,
       type: isVideoFile ? "video" : "image",
       url: mediaUrl,
-    });
+    };
+
+    screenMediaObjectUrlsRef.current.add(mediaUrl);
+    setScreenContent(mediaContent);
+    appendMediaClip(mediaContent);
     setIsMediaPlaying(false);
     setIsMediaTimelinePlaying(false);
     setIsMasterPlaying(false);
@@ -3387,6 +3402,28 @@ export default function Home() {
   const handleUseWebsiteContent = () => {
     handleWebsiteChange(websiteUrl);
   };
+
+  const handleMediaDurationChange = useCallback(
+    (duration: number) => {
+      setMediaDuration(duration);
+
+      if (!activeMediaClip || activeMediaClip.kind !== "video") {
+        return;
+      }
+
+      setMediaClips((currentClips) =>
+        currentClips.map((clip) =>
+          clip.clipId === activeMediaClip.clipId
+            ? {
+              ...clip,
+              duration: Math.max(duration, MIN_CLIP_DURATION),
+            }
+            : clip,
+        ),
+      );
+    },
+    [activeMediaClip],
+  );
 
   const handleDeviceDragEnd = useCallback(() => {
     setIsDraggingDevice(false);
@@ -3480,10 +3517,13 @@ export default function Home() {
       <DeviceSidebar
         canvasBackgroundColor={canvasBackgroundColor}
         onCanvasBackgroundColorChange={setCanvasBackgroundColor}
+        mediaTracks={getOrderedTracks(mediaTracks, "media")}
+        onSelectedMediaTrackChange={setSelectedMediaTrackId}
         selectedDeviceId={selectedDevice.id}
+        selectedMediaTrackId={selectedAppendMediaTrackId}
         onSelectDevice={handleSelectDevice}
-        screenContentName={screenContent.label}
-        screenContentType={screenContent.type}
+        screenContentName={activeScreenContent.label}
+        screenContentType={activeScreenContent.type}
         websiteUrl={websiteUrl}
         onMediaUpload={handleScreenMediaUpload}
         onUseWebsiteContent={handleUseWebsiteContent}
@@ -3546,7 +3586,6 @@ export default function Home() {
               controlsRef={controlsRef}
               deviceId={selectedDevice.id}
               gestureImpulse={gestureImpulse}
-              isPointerOnDevice={isPointerOnDevice}
               motionProfile={motionProfile}
               movementPlaySignal={movementPlaySignal}
               resetSignal={resetSignal}
@@ -3561,12 +3600,7 @@ export default function Home() {
                 device={selectedDevice}
                 gestureImpulse={gestureImpulse}
                 isDraggingDevice={isDraggingDevice}
-                isMediaPlaying={
-                  isMediaPlaying &&
-                  !!activeMediaClip &&
-                  screenContent.type === "video"
-                }
-                isPointerOnDevice={isPointerOnDevice}
+                isMediaPlaying={shouldPlayActiveVideo}
                 movementPlaySignal={movementPlaySignal}
                 motionProfile={motionProfile}
                 isRotateMode={isRotateMode}
@@ -3575,7 +3609,7 @@ export default function Home() {
                 mediaPlaySignal={mediaPlaySignal}
                 modelPositionOffset={modelPositionOffset}
                 resetSignal={resetSignal}
-                screenContent={screenContent}
+                screenContent={activeScreenContent}
                 speedProfile={speedProfile}
                 timelineSample={timelineAnimationSample}
                 onDeviceDragEnd={handleDeviceDragEnd}
@@ -3583,7 +3617,7 @@ export default function Home() {
                 onDeviceHoverEnd={handleDeviceHoverEnd}
                 onDeviceHoverStart={handleDeviceHoverStart}
                 onModelPositionCommit={setModelPositionOffset}
-                onMediaDurationChange={setMediaDuration}
+                onMediaDurationChange={handleMediaDurationChange}
                 onMediaEnded={() => setIsMediaPlaying(false)}
                 onMediaPlayStateChange={setIsMediaPlaying}
               />
