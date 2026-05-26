@@ -47,7 +47,6 @@ const MAX_TIMELINE_PANEL_HEIGHT = 520;
 const MIN_TIMELINE_PANEL_HEIGHT = 160;
 const MIN_CLIP_DURATION = 0.25;
 const MODEL_CANVAS_PINCH_ZOOM_SENSITIVITY = 0.012;
-const MODEL_CANVAS_WHEEL_ZOOM_SENSITIVITY = 0.0028;
 const MODEL_GESTURE_ZOOM_SENSITIVITY = 0.45;
 const MODEL_DEPTH_LIMIT = 1.25;
 const MODEL_POSITION_LIMIT = 1.75;
@@ -740,6 +739,7 @@ function TimelineIconButton({
       disabled={disabled}
       title={label}
       onClick={onClick}
+      onPointerDown={(event) => event.stopPropagation()}
       className={`grid shrink-0 place-items-center rounded-md border shadow-sm transition ${
         compact ? "h-7 w-7 [&_svg]:h-3.5 [&_svg]:w-3.5" : "h-8 w-8"
       } ${
@@ -816,6 +816,73 @@ const getTimelineEnd = (clips: Array<{ duration: number; start: number }>) =>
     (latestEnd, clip) => Math.max(latestEnd, clip.start + clip.duration),
     0,
   );
+
+const getBoundedClipTiming = <
+  Clip extends {
+    clipId: number;
+    duration: number;
+    start: number;
+    trackId: string;
+  },
+>(
+  clip: Clip,
+  clips: Clip[],
+  update: Partial<Pick<Clip, "duration" | "start" | "trackId">>,
+) => {
+  const trackId = update.trackId ?? clip.trackId;
+  const trackClips = clips
+    .filter(
+      (currentClip) =>
+        currentClip.clipId !== clip.clipId && currentClip.trackId === trackId,
+    )
+    .slice()
+    .sort((firstClip, secondClip) => firstClip.start - secondClip.start);
+  const previousClip =
+    trackClips
+      .filter((currentClip) => currentClip.start <= clip.start)
+      .at(-1) ?? null;
+  const nextClip =
+    trackClips.find((currentClip) => currentClip.start > clip.start) ?? null;
+  const minStart = previousClip
+    ? previousClip.start + previousClip.duration
+    : 0;
+  const maxEnd = nextClip ? nextClip.start : Number.POSITIVE_INFINITY;
+
+  let start =
+    update.start === undefined ? clip.start : snapTimelineTime(update.start);
+  let duration =
+    update.duration === undefined
+      ? clip.duration
+      : Math.max(MIN_CLIP_DURATION, update.duration);
+
+  if (update.start !== undefined && update.duration === undefined) {
+    const proposedNextClip =
+      trackClips.find((currentClip) => currentClip.start > start) ?? null;
+    const proposedPreviousClip =
+      trackClips
+        .filter((currentClip) => currentClip.start <= start)
+        .at(-1) ?? null;
+    const moveMinStart = proposedPreviousClip
+      ? proposedPreviousClip.start + proposedPreviousClip.duration
+      : 0;
+    const moveMaxStart = proposedNextClip
+      ? proposedNextClip.start - duration
+      : Number.POSITIVE_INFINITY;
+
+    start = Math.max(moveMinStart, Math.min(start, moveMaxStart));
+  } else {
+    const end = Math.min(start + duration, maxEnd);
+
+    start = MathUtils.clamp(start, minStart, end - MIN_CLIP_DURATION);
+    duration = Math.max(MIN_CLIP_DURATION, end - start);
+  }
+
+  return {
+    duration,
+    start: snapTimelineTime(start),
+    trackId,
+  };
+};
 
 const getOrderedTracks = (tracks: TimelineTrack[], kind: TimelineTrackKind) =>
   tracks
@@ -1078,8 +1145,8 @@ function SceneCameraDefaults({
     const entranceProgress = entrance.running
       ? easeOutExpo(Math.min(entrance.elapsed / 1.1, 1))
       : 1;
-    const idleOrbit = motionProfile.cameraOrbit;
-    const idleDolly = motionProfile.cameraDolly;
+    const idleOrbit = 0;
+    const idleDolly = 0;
     const targetX =
       basePosition[0] +
       Math.sin(elapsedTime * 0.22) * idleOrbit +
@@ -1283,7 +1350,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
         transform
         center
         scale={screen.scale}
-        eps={0.001}
+        eps={0.012}
         zIndexRange={[1, 0]}
       >
       <div
@@ -1291,7 +1358,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
         className="overflow-hidden bg-white"
         style={{
           opacity: 1,
-          transition: "opacity 0.2s ease",
+          transition: "none",
           width: screen.viewport.width,
           height: screen.viewport.height,
           borderRadius: screen.radius,
@@ -1301,11 +1368,11 @@ const WebsiteScreen = memo(function WebsiteScreen({
           cursor: isRotateMode ? "grab" : "auto",
           isolation: "isolate",
           pointerEvents: "auto",
-          transform: "translate3d(0, 0, 0)",
+          transform: "translateZ(0)",
           transformStyle: "preserve-3d",
           userSelect: isRotateMode ? "none" : "auto",
           WebkitUserSelect: isRotateMode ? "none" : "auto",
-          willChange: "transform, opacity",
+          willChange: "auto",
         }}
         onPointerDown={(event) => {
           if (!isRotateMode) {
@@ -1361,10 +1428,10 @@ const WebsiteScreen = memo(function WebsiteScreen({
               display: "block",
               pointerEvents: isRotateMode ? "none" : "auto",
               textRendering: "geometricPrecision",
-              transform: "translate3d(0, 0, 0)",
+              transform: "translateZ(0)",
               userSelect: isRotateMode ? "none" : "auto",
               WebkitUserSelect: isRotateMode ? "none" : "auto",
-              willChange: "transform",
+              willChange: "auto",
             }}
           />
         ) : screenContent.type === "image" ? (
@@ -1381,10 +1448,10 @@ const WebsiteScreen = memo(function WebsiteScreen({
               clipPath: "inherit",
               display: "block",
               pointerEvents: "none",
-              transform: "translate3d(0, 0, 0)",
+              transform: "translateZ(0)",
               userSelect: "none",
               WebkitUserSelect: "none",
-              willChange: "transform",
+              willChange: "auto",
             }}
           />
         ) : (
@@ -1402,10 +1469,10 @@ const WebsiteScreen = memo(function WebsiteScreen({
               clipPath: "inherit",
               display: "block",
               pointerEvents: isRotateMode ? "none" : "auto",
-              transform: "translate3d(0, 0, 0)",
+              transform: "translateZ(0)",
               userSelect: isRotateMode ? "none" : "auto",
               WebkitUserSelect: isRotateMode ? "none" : "auto",
-              willChange: "transform",
+              willChange: "auto",
             }}
             onEnded={() => {
               onMediaEnded();
@@ -2144,6 +2211,10 @@ function TimelineEditor({
           aria-label="Delete clip"
           title="Delete clip"
           className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 transition hover:bg-zinc-900 hover:text-zinc-100 group-hover:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           onClick={(event) => {
             event.stopPropagation();
             onClipDelete(kind, clip.clipId);
@@ -2712,12 +2783,10 @@ export default function Home() {
 
     const handleNativeWheel = (event: WheelEvent) => {
       const isPinchZoom = event.ctrlKey;
-      const shouldZoomModel =
-        isPinchZoom ||
-        isRotateModeRef.current ||
-        !isPointerOnDeviceRef.current;
+      const shouldRotateDevice =
+        isRotateModeRef.current && isPointerOnDeviceRef.current;
 
-      if (!shouldZoomModel) {
+      if (!isPinchZoom && !shouldRotateDevice) {
         return;
       }
 
@@ -2734,17 +2803,16 @@ export default function Home() {
         -220,
         220,
       );
-      const zoomSensitivity = isPinchZoom
-        ? MODEL_CANVAS_PINCH_ZOOM_SENSITIVITY
-        : MODEL_CANVAS_WHEEL_ZOOM_SENSITIVITY;
-
-      setModelPositionOffset((currentPosition) =>
-        clampModelPosition([
-          currentPosition[0],
-          currentPosition[1],
-          currentPosition[2] - deltaY * zoomSensitivity,
-        ]),
-      );
+      if (isPinchZoom) {
+        setModelPositionOffset((currentPosition) =>
+          clampModelPosition([
+            currentPosition[0],
+            currentPosition[1],
+            currentPosition[2] -
+            deltaY * MODEL_CANVAS_PINCH_ZOOM_SENSITIVITY,
+          ]),
+        );
+      }
 
       if (
         isPinchZoom ||
@@ -3310,29 +3378,6 @@ export default function Home() {
     );
   };
 
-  const updateTimelineClip = (
-    kind: TimelineTrackKind,
-    clipId: number,
-    updater: (
-      clip: TransitionClip | MediaTimelineClip,
-    ) => TransitionClip | MediaTimelineClip,
-  ) => {
-    if (kind === "animation") {
-      setTransitionTrack((currentClips) =>
-        currentClips.map((clip) =>
-          clip.clipId === clipId ? (updater(clip) as TransitionClip) : clip,
-        ),
-      );
-      return;
-    }
-
-    setMediaClips((currentClips) =>
-      currentClips.map((clip) =>
-        clip.clipId === clipId ? (updater(clip) as MediaTimelineClip) : clip,
-      ),
-    );
-  };
-
   const deleteTimelineClip = (kind: TimelineTrackKind, clipId: number) => {
     if (kind === "animation") {
       setTransitionTrack((currentClips) =>
@@ -3661,18 +3706,27 @@ export default function Home() {
           onClipDelete={deleteTimelineClip}
           onClipSelect={playTrackClip}
           onClipUpdate={(kind, clipId, update) =>
-            updateTimelineClip(kind, clipId, (clip) => ({
-              ...clip,
-              duration:
-                update.duration === undefined
-                  ? clip.duration
-                  : Math.max(MIN_CLIP_DURATION, update.duration),
-              start:
-                update.start === undefined
-                  ? clip.start
-                  : snapTimelineTime(update.start),
-              trackId: update.trackId ?? clip.trackId,
-            }))
+            kind === "animation"
+              ? setTransitionTrack((currentClips) =>
+                currentClips.map((clip) =>
+                  clip.clipId === clipId
+                    ? {
+                      ...clip,
+                      ...getBoundedClipTiming(clip, currentClips, update),
+                    }
+                    : clip,
+                ),
+              )
+              : setMediaClips((currentClips) =>
+                currentClips.map((clip) =>
+                  clip.clipId === clipId
+                    ? {
+                      ...clip,
+                      ...getBoundedClipTiming(clip, currentClips, update),
+                    }
+                    : clip,
+                ),
+              )
           }
           onDeleteTrack={deleteTimelineTrack}
           onDuplicateTrack={duplicateTimelineTrack}
