@@ -1290,8 +1290,10 @@ const WebsiteScreen = memo(function WebsiteScreen({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenNormalRef = useRef(new Vector3());
   const screenPositionRef = useRef(new Vector3());
+  const screenUpRef = useRef(new Vector3());
   const cameraDirectionRef = useRef(new Vector3());
   const worldQuaternionRef = useRef(new Quaternion());
+  const usesModelOcclusion = device.id !== 3 && device.id !== 4;
 
   const stopScreenEvent = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1313,6 +1315,12 @@ const WebsiteScreen = memo(function WebsiteScreen({
     screenElement.style.visibility = isVisible ? "visible" : "hidden";
   }, []);
 
+  useEffect(() => {
+    screenOccludedRef.current = false;
+    screenIsFacingCameraRef.current = true;
+    updateScreenVisibility();
+  }, [device.id, updateScreenVisibility]);
+
   useFrame(() => {
     const screenElement = screenElementRef.current;
     const screenGroup = screenGroupRef.current;
@@ -1323,17 +1331,22 @@ const WebsiteScreen = memo(function WebsiteScreen({
 
     const screenPosition = screenPositionRef.current;
     const screenNormal = screenNormalRef.current;
+    const screenUp = screenUpRef.current;
     const cameraDirection = cameraDirectionRef.current;
     const worldQuaternion = worldQuaternionRef.current;
 
     screenGroup.getWorldPosition(screenPosition);
     screenGroup.getWorldQuaternion(worldQuaternion);
     screenNormal.set(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
+    screenUp.set(0, 1, 0).applyQuaternion(worldQuaternion).normalize();
     cameraDirection.subVectors(camera.position, screenPosition).normalize();
 
     const facingScore = screenNormal.dot(cameraDirection);
+    const verticalScore = screenUp.dot(cameraDirection);
     const wasFacingCamera = screenIsFacingCameraRef.current;
-    const isFacingCamera = facingScore > (device.id === 3 ? 0.38 : 0.12);
+    const isFacingCamera =
+      facingScore > (device.id === 3 ? 0.38 : 0.12) &&
+      (device.id !== 3 || verticalScore > -0.18);
 
     if (isFacingCamera === wasFacingCamera) {
       return;
@@ -1384,7 +1397,7 @@ const WebsiteScreen = memo(function WebsiteScreen({
         center
         scale={screen.scale}
         eps={0.012}
-        occlude={occludeRef ? [occludeRef] : true}
+        occlude={usesModelOcclusion ? (occludeRef ? [occludeRef] : true) : false}
         onOcclude={(hidden) => {
           if (hidden === screenOccludedRef.current) {
             return;
