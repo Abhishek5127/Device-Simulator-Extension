@@ -53,6 +53,18 @@ const MODEL_GESTURE_ZOOM_SENSITIVITY = 0.45;
 const MODEL_DEPTH_LIMIT = 1.25;
 const MODEL_POSITION_LIMIT = 1.75;
 const MODEL_ROTATION_SENSITIVITY = 0.01;
+// Orientation tracks the cursor near 1:1 while a drag is active, then relaxes to
+// the motion profile's softer settle damping once the pointer is released.
+const MODEL_DRAG_TRACKING_DAMPING = 34;
+// Panning follows the pointer tightly while dragging instead of the soft idle rate.
+const MODEL_DRAG_POSITION_DAMPING = 26;
+const MODEL_IDLE_POSITION_DAMPING = 13;
+// Flick-to-spin tuning: gain converts the release flick into angular velocity,
+// smoothing rejects single-frame jitter, and the cap keeps spins predictable.
+const MODEL_MOMENTUM_GAIN = 16;
+const MODEL_MOMENTUM_SMOOTHING = 0.4;
+const MODEL_MOMENTUM_DAMPING = 6.5;
+const MODEL_MAX_ANGULAR_VELOCITY = 9;
 const RECORDING_MAX_HEIGHT = 1080;
 const RECORDING_MAX_WIDTH = 1920;
 const RECORDING_VIDEO_BITS_PER_SECOND = 16_000_000;
@@ -1000,6 +1012,18 @@ const clampModelPosition = (
   Math.max(position[2], -MODEL_DEPTH_LIMIT),
 ];
 
+// Keep inertial spin below a predictable ceiling so a fast pointer jerk can't
+// fling the model at an uncontrollable rate.
+const clampAngularVelocity = (velocity: Vector3) => {
+  const speed = velocity.length();
+
+  if (speed > MODEL_MAX_ANGULAR_VELOCITY) {
+    velocity.multiplyScalar(MODEL_MAX_ANGULAR_VELOCITY / speed);
+  }
+
+  return velocity;
+};
+
 const improveTextureQuality = (scene: Object3D, maxAnisotropy: number) => {
   scene.traverse((object) => {
     const mesh = object as Mesh;
@@ -1607,6 +1631,7 @@ const DeviceModel = memo(function DeviceModel({
   const groupRef = useRef<Group | null>(null);
   const sceneObjectRef = useRef<Object3D>(scene);
   const angularVelocityRef = useRef(new Vector3());
+  const momentumSampleRef = useRef(new Vector3());
   const cameraRightRef = useRef(new Vector3());
   const cameraUpRef = useRef(new Vector3());
   const currentQuaternionRef = useRef(new Quaternion());
@@ -1772,10 +1797,16 @@ const DeviceModel = memo(function DeviceModel({
       }
 
       stabilizeTargetQuaternion();
-      angularVelocityRef.current
+
+      // Build the release-momentum vector from this frame's flick, then blend it
+      // into the running velocity so a single noisy frame can't dominate the spin.
+      const flickVelocity = momentumSampleRef.current
         .copy(cameraUp)
-        .multiplyScalar(yawAngle * 18)
-        .addScaledVector(cameraRight, pitchAngle * 18);
+        .multiplyScalar(yawAngle * MODEL_MOMENTUM_GAIN)
+        .addScaledVector(cameraRight, pitchAngle * MODEL_MOMENTUM_GAIN);
+
+      angularVelocityRef.current.lerp(flickVelocity, MODEL_MOMENTUM_SMOOTHING);
+      clampAngularVelocity(angularVelocityRef.current);
     },
     [
       applyAxisRotation,
@@ -1905,6 +1936,7 @@ const DeviceModel = memo(function DeviceModel({
       .copy(cameraUp)
       .multiplyScalar(yawAngle * 10)
       .addScaledVector(cameraRight, pitchAngle * 10);
+    clampAngularVelocity(angularVelocityRef.current);
   }, [
     applyAxisRotation,
     camera,
@@ -2042,15 +2074,21 @@ const DeviceModel = memo(function DeviceModel({
       stabilizeTargetQuaternion();
     }
 
-    angularVelocity.multiplyScalar(Math.exp(-7.5 * delta));
+    angularVelocity.multiplyScalar(Math.exp(-MODEL_MOMENTUM_DAMPING * delta));
 
     if (angularVelocity.lengthSq() < 0.000001) {
       angularVelocity.set(0, 0, 0);
     }
 
+    // Track the cursor tightly while dragging for direct, 1:1-feeling control;
+    // relax to the motion profile's cinematic settle once released.
+    const orientationDamping = isDraggingDevice
+      ? MODEL_DRAG_TRACKING_DAMPING
+      : motionProfile.settleDamping;
+
     currentQuaternion.slerp(
       targetQuaternion,
-      1 - Math.exp(-motionProfile.settleDamping * delta),
+      1 - Math.exp(-orientationDamping * delta),
     );
 
     const targetPosition: [number, number, number] = [
@@ -2059,23 +2097,26 @@ const DeviceModel = memo(function DeviceModel({
       modelPositionOffset[2],
     ];
     const currentPosition = currentPositionRef.current;
+    const positionDamping = isDraggingDevice
+      ? MODEL_DRAG_POSITION_DAMPING
+      : MODEL_IDLE_POSITION_DAMPING;
 
     currentPosition[0] = MathUtils.damp(
       currentPosition[0],
       targetPosition[0],
-      13,
+      positionDamping,
       delta,
     );
     currentPosition[1] = MathUtils.damp(
       currentPosition[1],
       targetPosition[1],
-      13,
+      positionDamping,
       delta,
     );
     currentPosition[2] = MathUtils.damp(
       currentPosition[2],
       targetPosition[2],
-      13,
+      positionDamping,
       delta,
     );
 
