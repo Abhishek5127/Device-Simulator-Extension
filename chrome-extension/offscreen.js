@@ -309,6 +309,108 @@ const stopRecording = () => {
   cleanup();
 };
 
+/* ----------------------------------------------------------------------------
+ * Live tab capture -> WebRTC loopback to the simulator page.
+ * getUserMedia must run here (the service worker has no DOM); the resulting
+ * MediaStream can't be cloned across contexts, so we offer it over a local
+ * RTCPeerConnection and the page answers.
+ * ------------------------------------------------------------------------- */
+
+let capturePeer = null;
+let captureStream = null;
+
+const stopCapture = () => {
+  if (capturePeer) {
+    capturePeer.onicecandidate = null;
+    capturePeer.ontrack = null;
+    capturePeer.close();
+    capturePeer = null;
+  }
+
+  if (captureStream) {
+    captureStream.getTracks().forEach((track) => track.stop());
+    captureStream = null;
+  }
+};
+
+const startCapture = async ({ streamId }) => {
+  stopCapture();
+
+  if (!streamId) {
+    throw new Error("Missing capture stream id.");
+  }
+
+  captureStream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      mandatory: {
+        chromeMediaSource: "tab",
+        chromeMediaSourceId: streamId,
+      },
+    },
+  });
+
+  const [videoTrack] = captureStream.getVideoTracks();
+
+  if (videoTrack) {
+    videoTrack.contentHint = "text";
+  }
+
+  capturePeer = new RTCPeerConnection();
+  captureStream.getTracks().forEach((track) => {
+    capturePeer.addTrack(track, captureStream);
+  });
+
+  capturePeer.onicecandidate = (event) => {
+    if (event.candidate) {
+      void sendToService({
+        signal: { candidate: event.candidate.toJSON(), kind: "ice" },
+        type: "CAPTURE_SIGNAL",
+      });
+    }
+  };
+
+  const offer = await capturePeer.createOffer();
+
+  await capturePeer.setLocalDescription(offer);
+  await sendToService({
+    signal: { description: { sdp: offer.sdp, type: offer.type }, kind: "sdp" },
+    type: "CAPTURE_SIGNAL",
+  });
+
+  const settings = videoTrack?.getSettings?.() ?? {};
+
+  await sendToService({
+    type: "CAPTURE_READY",
+    viewport: {
+      height: Math.round(settings.height ?? 720),
+      width: Math.round(settings.width ?? 1280),
+    },
+  });
+};
+
+const applyCaptureSignal = async (signal) => {
+  if (!capturePeer || !signal) {
+    return;
+  }
+
+  try {
+    if (signal.kind === "sdp" && signal.description) {
+      await capturePeer.setRemoteDescription(signal.description);
+    } else if (signal.kind === "ice" && signal.candidate) {
+      await capturePeer.addIceCandidate(signal.candidate);
+    }
+  } catch (error) {
+    void sendToService({
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not apply capture signal.",
+      type: "CAPTURE_ERROR",
+    });
+  }
+};
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.source !== SERVICE_SOURCE) {
     return;
@@ -342,6 +444,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "STOP_RECORDING") {
     sendResponse({ ok: true });
     stopRecording();
+    return true;
+  }
+
+  if (message.type === "START_CAPTURE") {
+    startCapture(message)
+      .then(() => {
+        sendResponse({ ok: true });
+      })
+      .catch((error) => {
+        stopCapture();
+        sendResponse({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not start tab capture.",
+          ok: false,
+        });
+      });
+    return true;
+  }
+
+  if (message.type === "CAPTURE_SIGNAL") {
+    void applyCaptureSignal(message.signal);
+    return;
+  }
+
+  if (message.type === "STOP_CAPTURE") {
+    stopCapture();
+    sendResponse({ ok: true });
     return true;
   }
 });

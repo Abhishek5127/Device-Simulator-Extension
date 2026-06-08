@@ -35,6 +35,11 @@ import type {
 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import DeviceSidebar, { devices } from "./components/deviceSidebar";
+import {
+  type CaptureInput,
+  type CaptureStatus,
+  extensionBridge,
+} from "./lib/extensionBridge";
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 0, 3];
 const DEFAULT_CANVAS_BACKGROUND_COLOR = "#18181b";
@@ -1263,13 +1268,254 @@ function SceneCameraDefaults({
   return null;
 }
 
+const cdpModifiers = (event: {
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}) =>
+  (event.altKey ? 1 : 0) |
+  (event.ctrlKey ? 2 : 0) |
+  (event.metaKey ? 4 : 0) |
+  (event.shiftKey ? 8 : 0);
+
+const WebsiteSurface = memo(function WebsiteSurface({
+  captureStatus,
+  captureStream,
+  extensionAvailable,
+  interactive,
+  onScreenInput,
+}: {
+  captureStatus: CaptureStatus;
+  captureStream: MediaStream | null;
+  extensionAvailable: boolean;
+  interactive: boolean;
+  onScreenInput: (input: CaptureInput) => void;
+}) {
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    if (video.srcObject !== captureStream) {
+      video.srcObject = captureStream;
+    }
+
+    if (captureStream) {
+      void video.play().catch(() => {});
+    }
+  }, [captureStream]);
+
+  const toUV = useCallback((clientX: number, clientY: number) => {
+    const surface = surfaceRef.current;
+
+    if (!surface) {
+      return { u: 0, v: 0 };
+    }
+
+    const rect = surface.getBoundingClientRect();
+
+    return {
+      u: (clientX - rect.left) / Math.max(1, rect.width),
+      v: (clientY - rect.top) / Math.max(1, rect.height),
+    };
+  }, []);
+
+  // Wheel must be a non-passive native listener so we can forward + preventDefault.
+  useEffect(() => {
+    const surface = surfaceRef.current;
+
+    if (!surface || !interactive || !captureStream) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const { u, v } = toUV(event.clientX, event.clientY);
+
+      onScreenInput({
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        kind: "wheel",
+        modifiers: cdpModifiers(event),
+        u,
+        v,
+      });
+    };
+
+    surface.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      surface.removeEventListener("wheel", handleWheel);
+    };
+  }, [captureStream, interactive, onScreenInput, toUV]);
+
+  const showVideo = Boolean(captureStream);
+  const statusMessage = !extensionAvailable
+    ? "Load the Device Simulator extension to project a real, signed-in site onto this screen."
+    : captureStatus === "connecting"
+      ? "Opening your tab and connecting…"
+      : captureStatus === "error"
+        ? "Couldn't capture that tab. Check the URL and try again."
+        : "Enter a URL and press Go to mirror a real, signed-in site here.";
+
+  return (
+    <div
+      ref={surfaceRef}
+      tabIndex={interactive ? 0 : -1}
+      className="relative h-full w-full bg-zinc-950 outline-none"
+      style={{
+        borderRadius: "inherit",
+        clipPath: "inherit",
+        cursor: interactive ? "auto" : "grab",
+      }}
+      onPointerDown={(event) => {
+        if (!interactive || !showVideo) {
+          return;
+        }
+
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.focus();
+
+        const { u, v } = toUV(event.clientX, event.clientY);
+
+        onScreenInput({
+          button: event.button,
+          clickCount: event.detail || 1,
+          kind: "down",
+          modifiers: cdpModifiers(event),
+          u,
+          v,
+        });
+      }}
+      onPointerMove={(event) => {
+        if (!interactive || !showVideo) {
+          return;
+        }
+
+        event.stopPropagation();
+
+        const { u, v } = toUV(event.clientX, event.clientY);
+
+        onScreenInput({ kind: "move", modifiers: cdpModifiers(event), u, v });
+      }}
+      onPointerUp={(event) => {
+        if (!interactive || !showVideo) {
+          return;
+        }
+
+        event.stopPropagation();
+        event.currentTarget.releasePointerCapture(event.pointerId);
+
+        const { u, v } = toUV(event.clientX, event.clientY);
+
+        onScreenInput({
+          button: event.button,
+          kind: "up",
+          modifiers: cdpModifiers(event),
+          u,
+          v,
+        });
+      }}
+      onKeyDown={(event) => {
+        if (!interactive || !showVideo) {
+          return;
+        }
+
+        event.stopPropagation();
+        event.preventDefault();
+        onScreenInput({
+          code: event.code,
+          key: event.key,
+          keyCode: event.keyCode,
+          kind: "keydown",
+          modifiers: cdpModifiers(event),
+          text: event.key.length === 1 ? event.key : undefined,
+        });
+      }}
+      onKeyUp={(event) => {
+        if (!interactive || !showVideo) {
+          return;
+        }
+
+        event.stopPropagation();
+        event.preventDefault();
+        onScreenInput({
+          code: event.code,
+          key: event.key,
+          keyCode: event.keyCode,
+          kind: "keyup",
+          modifiers: cdpModifiers(event),
+        });
+      }}
+    >
+      {showVideo ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="h-full w-full"
+          style={{
+            backfaceVisibility: "hidden",
+            borderRadius: "inherit",
+            clipPath: "inherit",
+            display: "block",
+            objectFit: "fill",
+            pointerEvents: "none",
+            transform: "translateZ(0)",
+          }}
+        />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-gradient-to-b from-zinc-900 to-zinc-950 px-8 text-center">
+          {captureStatus === "connecting" ? (
+            <span className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
+          ) : (
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-300/15 text-cyan-200">
+              <svg
+                aria-hidden="true"
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+                viewBox="0 0 24 24"
+              >
+                <rect height="14" rx="2" width="18" x="3" y="4" />
+                <path d="M3 9h18" />
+                <path d="M8 14h6" />
+              </svg>
+            </span>
+          )}
+          <p className="max-w-[16rem] text-sm font-medium leading-snug text-zinc-300">
+            {statusMessage}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+});
+
 const WebsiteScreen = memo(function WebsiteScreen({
+  captureStatus,
+  captureStream,
   device,
+  extensionAvailable,
   mediaClipStart,
   isMediaPlaying,
   isRotateMode,
   mediaTimelineTime,
   mediaPlaySignal,
+  onScreenInput,
   screenContent,
   onDeviceDragEnd,
   onDeviceDragMove,
@@ -1281,12 +1527,16 @@ const WebsiteScreen = memo(function WebsiteScreen({
   onMediaEnded,
   onMediaPlayStateChange,
 }: {
+  captureStatus: CaptureStatus;
+  captureStream: MediaStream | null;
   device: (typeof devices)[number];
+  extensionAvailable: boolean;
   mediaClipStart: number;
   isMediaPlaying: boolean;
   isRotateMode: boolean;
   mediaTimelineTime: number;
   mediaPlaySignal: number;
+  onScreenInput: (input: CaptureInput) => void;
   screenContent: ScreenContent;
   onDeviceDragEnd: () => void;
   onDeviceDragMove: (
@@ -1497,24 +1747,12 @@ const WebsiteScreen = memo(function WebsiteScreen({
         }}
       >
         {screenContent.type === "website" ? (
-          <iframe
-            key={`${device.id}-${screenContent.url}`}
-            title={`${device.name} website preview`}
-            src={screenContent.url}
-            className="h-full w-full border-0 bg-white"
-            loading="eager"
-            style={{
-              backfaceVisibility: "hidden",
-              borderRadius: "inherit",
-              clipPath: "inherit",
-              display: "block",
-              pointerEvents: isRotateMode ? "none" : "auto",
-              textRendering: "geometricPrecision",
-              transform: "translateZ(0)",
-              userSelect: isRotateMode ? "none" : "auto",
-              WebkitUserSelect: isRotateMode ? "none" : "auto",
-              willChange: "auto",
-            }}
+          <WebsiteSurface
+            captureStatus={captureStatus}
+            captureStream={captureStream}
+            extensionAvailable={extensionAvailable}
+            interactive={!isRotateMode}
+            onScreenInput={onScreenInput}
           />
         ) : screenContent.type === "image" ? (
           // eslint-disable-next-line @next/next/no-img-element -- Uploaded object URLs cannot be optimized through next/image.
@@ -1575,7 +1813,10 @@ const WebsiteScreen = memo(function WebsiteScreen({
 
 const DeviceModel = memo(function DeviceModel({
   activeMovement,
+  captureStatus,
+  captureStream,
   device,
+  extensionAvailable,
   gestureImpulse,
   isDraggingDevice,
   movementPlaySignal,
@@ -1586,6 +1827,7 @@ const DeviceModel = memo(function DeviceModel({
   mediaTimelineTime,
   mediaPlaySignal,
   modelPositionOffset,
+  onScreenInput,
   resetSignal,
   screenContent,
   speedProfile,
@@ -1600,7 +1842,10 @@ const DeviceModel = memo(function DeviceModel({
   onMediaPlayStateChange,
 }: {
   activeMovement: MovementPreset | null;
+  captureStatus: CaptureStatus;
+  captureStream: MediaStream | null;
   device: (typeof devices)[number];
+  extensionAvailable: boolean;
   gestureImpulse: GestureImpulse;
   isDraggingDevice: boolean;
   isMediaPlaying: boolean;
@@ -1611,6 +1856,7 @@ const DeviceModel = memo(function DeviceModel({
   mediaTimelineTime: number;
   mediaPlaySignal: number;
   modelPositionOffset: [number, number, number];
+  onScreenInput: (input: CaptureInput) => void;
   resetSignal: number;
   screenContent: ScreenContent;
   speedProfile: SpeedProfile;
@@ -2274,12 +2520,16 @@ const DeviceModel = memo(function DeviceModel({
         }
       />
       <WebsiteScreen
+        captureStatus={captureStatus}
+        captureStream={captureStream}
         device={device}
+        extensionAvailable={extensionAvailable}
         mediaClipStart={mediaClipStart}
         isMediaPlaying={isMediaPlaying}
         isRotateMode={isRotateMode}
         mediaTimelineTime={mediaTimelineTime}
         mediaPlaySignal={mediaPlaySignal}
+        onScreenInput={onScreenInput}
         screenContent={screenContent}
         onDeviceDragEnd={onDeviceDragEnd}
         onDeviceDragMove={rotateDevice}
@@ -2743,6 +2993,55 @@ function TimelineEditor({
   );
 }
 
+function useExtensionCapture() {
+  // Lazy initializer captures availability for remounts, where init() is a
+  // no-op and the "availability" event won't re-fire. On the first mount this
+  // is false on both server and client, so there is no hydration mismatch.
+  const [available, setAvailable] = useState(() =>
+    extensionBridge.isAvailable(),
+  );
+  const [status, setStatus] = useState<CaptureStatus>("idle");
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [captureError, setCaptureError] = useState("");
+
+  useEffect(() => {
+    extensionBridge.init();
+
+    const unsubscribers = [
+      extensionBridge.on("availability", setAvailable),
+      extensionBridge.on("status", setStatus),
+      extensionBridge.on("stream", setStream),
+      extensionBridge.on("error", setCaptureError),
+    ];
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, []);
+
+  const startCapture = useCallback(
+    (target: {
+      height?: number;
+      tabId?: number;
+      url?: string;
+      width?: number;
+    }) => extensionBridge.startCapture(target),
+    [],
+  );
+  const stopCapture = useCallback(() => extensionBridge.stopCapture(), []);
+  const listTabs = useCallback(() => extensionBridge.listTabs(), []);
+
+  return {
+    available,
+    captureError,
+    listTabs,
+    startCapture,
+    status,
+    stopCapture,
+    stream,
+  };
+}
+
 export default function Home() {
   const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(
     DEFAULT_CANVAS_BACKGROUND_COLOR,
@@ -2861,6 +3160,18 @@ export default function Home() {
   );
   const motionProfile = MOTION_PROFILES[0];
   const speedProfile = SPEED_PROFILES[1];
+  const {
+    available: extensionAvailable,
+    captureError,
+    startCapture,
+    status: captureStatus,
+    stopCapture,
+    stream: captureStream,
+  } = useExtensionCapture();
+  const handleScreenInput = useCallback(
+    (input: CaptureInput) => extensionBridge.sendInput(input),
+    [],
+  );
   const transitionTrackDuration = useMemo(
     () =>
       getTimelineEnd(transitionTrack),
@@ -3437,8 +3748,9 @@ export default function Home() {
       }
 
       revokeUploadedScreenMedia();
+      void stopCapture();
     },
-    [],
+    [stopCapture],
   );
 
   const resetInteractiveView = () => {
@@ -3711,6 +4023,19 @@ export default function Home() {
     setIsMediaTimelinePlaying(false);
     setIsMasterPlaying(false);
     setMediaDuration(0);
+
+    // Project the real, signed-in page via the extension (no iframe / re-login).
+    // Open it at the device's own screen resolution so the site lays itself out
+    // natively (mobile layout on phones, etc.).
+    if (extensionAvailable) {
+      const { viewport } = selectedDevice.screen;
+
+      void startCapture({
+        height: Math.round(viewport.height),
+        url,
+        width: Math.round(viewport.width),
+      });
+    }
   };
 
   const handleScreenMediaUpload = (file: File) => {
@@ -3938,7 +4263,10 @@ export default function Home() {
               <DeviceModel
                 key={selectedDevice.modelPath}
                 activeMovement={activeMovement}
+                captureStatus={captureStatus}
+                captureStream={captureStream}
                 device={selectedDevice}
+                extensionAvailable={extensionAvailable}
                 gestureImpulse={gestureImpulse}
                 isDraggingDevice={isDraggingDevice}
                 isMediaPlaying={shouldPlayActiveVideo}
@@ -3949,6 +4277,7 @@ export default function Home() {
                 mediaTimelineTime={mediaTimelineTime}
                 mediaPlaySignal={mediaPlaySignal}
                 modelPositionOffset={modelPositionOffset}
+                onScreenInput={handleScreenInput}
                 resetSignal={resetSignal}
                 screenContent={activeScreenContent}
                 speedProfile={speedProfile}
@@ -4063,12 +4392,12 @@ export default function Home() {
           <TransitionsIcon />
         </ToolButton>
       </aside>
-      {recordingError ? (
+      {recordingError || captureError ? (
         <div
           role="alert"
           className="fixed bottom-5 right-20 z-40 max-w-sm rounded-lg border border-red-400/60 bg-red-950/95 px-4 py-3 text-sm text-red-100 shadow-2xl shadow-black/30"
         >
-          {recordingError}
+          {recordingError || captureError}
         </div>
       ) : null}
       {recordedVideoUrl ? (

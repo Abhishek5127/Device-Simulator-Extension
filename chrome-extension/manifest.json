@@ -1,17 +1,28 @@
 {
   "manifest_version": 3,
   "name": "Device Simulator Cursorless Recorder",
-  "version": "0.1.0",
-  "description": "Records the Device Simulator tab without capturing the OS cursor.",
+  "version": "0.2.0",
+  "description": "Projects a real, logged-in browser tab onto the Device Simulator screen (live + interactive) and records the simulator without the OS cursor.",
   "minimum_chrome_version": "116",
-  "permissions": ["offscreen", "tabs"],
+  "permissions": [
+    "offscreen",
+    "tabs",
+    "tabCapture",
+    "debugger",
+    "scripting",
+    "activeTab",
+    "windows"
+  ],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "service-worker.js"
   },
   "content_scripts": [
     {
-      "matches": ["http://127.0.0.1:*/*", "http://localhost:*/*"],
+      "matches": [
+        "http://127.0.0.1:*/*",
+        "http://localhost:*/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

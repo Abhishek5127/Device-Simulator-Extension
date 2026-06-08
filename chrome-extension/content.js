@@ -122,6 +122,87 @@ window.addEventListener("message", (event) => {
       },
       "Could not stop extension recording.",
     );
+    return;
+  }
+
+  if (message.type === "DEVICE_SIM_START_CAPTURE") {
+    try {
+      chrome.runtime.sendMessage(
+        {
+          height: message.height,
+          source: CONTENT_SOURCE,
+          tabId: message.tabId,
+          type: "START_CAPTURE",
+          url: message.url,
+          width: message.width,
+        },
+        (response) => {
+          postToPage({
+            error: chrome.runtime.lastError?.message ?? response?.error,
+            ok: !chrome.runtime.lastError && response?.ok !== false,
+            requestId: message.requestId,
+            tabId: response?.tabId,
+            type: "DEVICE_SIM_CAPTURE_RESULT",
+            viewport: response?.viewport,
+          });
+        },
+      );
+    } catch (error) {
+      postToPage({
+        error:
+          error instanceof Error ? error.message : "Could not start capture.",
+        ok: false,
+        requestId: message.requestId,
+        type: "DEVICE_SIM_CAPTURE_RESULT",
+      });
+    }
+    return;
+  }
+
+  if (message.type === "DEVICE_SIM_STOP_CAPTURE") {
+    chrome.runtime.sendMessage(
+      { source: CONTENT_SOURCE, type: "STOP_CAPTURE" },
+      (response) => {
+        postToPage({
+          ok: !chrome.runtime.lastError && response?.ok !== false,
+          requestId: message.requestId,
+          type: "DEVICE_SIM_CAPTURE_RESULT",
+        });
+      },
+    );
+    return;
+  }
+
+  if (message.type === "DEVICE_SIM_LIST_TABS") {
+    chrome.runtime.sendMessage(
+      { source: CONTENT_SOURCE, type: "LIST_TABS" },
+      (response) => {
+        postToPage({
+          ok: !chrome.runtime.lastError && response?.ok !== false,
+          requestId: message.requestId,
+          tabs: response?.tabs ?? [],
+          type: "DEVICE_SIM_TABS_RESULT",
+        });
+      },
+    );
+    return;
+  }
+
+  if (message.type === "DEVICE_SIM_CAPTURE_SIGNAL") {
+    chrome.runtime.sendMessage({
+      signal: message.signal,
+      source: CONTENT_SOURCE,
+      type: "CAPTURE_SIGNAL",
+    });
+    return;
+  }
+
+  if (message.type === "DEVICE_SIM_INPUT") {
+    chrome.runtime.sendMessage({
+      input: message.input,
+      source: CONTENT_SOURCE,
+      type: "INPUT",
+    });
   }
 });
 

@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+const msgs = [];
+page.on('console', m => msgs.push(`[${m.type()}] ${m.text()}`));
+page.on('pageerror', e => msgs.push(`[pageerror] ${e.message}`));
+page.on('requestfailed', r => msgs.push(`[reqfail] ${r.url()} :: ${r.failure()?.errorText}`));
+await page.goto('http://localhost:3000', { waitUntil: 'load', timeout: 60000 }).catch(e=>msgs.push('goto: '+e.message));
+await page.waitForTimeout(7000);
+const frames = page.frames().map(f => f.url());
+const iframeInfo = await page.evaluate(() => {
+  const ifr = document.querySelector('iframe');
+  if (!ifr) return 'NO IFRAME';
+  const r = ifr.getBoundingClientRect();
+  const host = ifr.closest('div[style]');
+  return { src: ifr.src, rect: {w:r.width,h:r.height}, parentOpacity: host?.style.opacity, parentVis: host?.style.visibility };
+});
+await page.screenshot({ path: 'probe-app.png' });
+console.log('FRAMES:', JSON.stringify(frames));
+console.log('IFRAME:', JSON.stringify(iframeInfo));
+console.log('CONSOLE:\n' + msgs.slice(-40).join('\n'));
+await browser.close();

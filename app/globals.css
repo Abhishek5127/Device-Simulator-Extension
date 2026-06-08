@@ -1,40 +1,211 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surface tiers */
+  --bg: #07070b;
+  --surface: #101016;
+  --surface-2: #16161f;
+  --elevated: #1c1c27;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Text tiers */
+  --text: #f4f4f6;
+  --text-muted: #a1a1b0;
+  --text-faint: #6b6b7b;
+
+  /* Accent */
+  --accent: #5cdcff;
+  --accent-2: #8b7bff;
+  --accent-soft: rgba(92, 220, 255, 0.16);
+
+  /* Radii + shadow */
+  --radius: 14px;
+  --shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 40px -24px rgba(0, 0, 0, 0.9);
+
+  --background: var(--bg);
+  --foreground: var(--text);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-surface: var(--surface);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
 * {
-  scrollbar-color: rgba(161, 161, 170, 0.45) rgba(24, 24, 27, 0.55);
+  scrollbar-color: rgba(140, 140, 160, 0.35) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 160, 0.28);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 160, 185, 0.45);
+  background-clip: content-box;
 }
 
 ::selection {
-  background: rgba(103, 232, 249, 0.3);
+  background: rgba(92, 220, 255, 0.32);
   color: #f4f4f5;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+/* ---------- Reusable surfaces ---------- */
+
+.glass {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.045),
+    rgba(255, 255, 255, 0.015)
+  );
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: var(--shadow-soft);
+}
+
+.glass-strong {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 20, 28, 0.86),
+    rgba(12, 12, 18, 0.92)
+  );
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: var(--shadow-soft);
+}
+
+.accent-text {
+  background: linear-gradient(92deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.accent-ring {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Mesh gradient backdrop for the 3D stage */
+.app-gradient {
+  background:
+    radial-gradient(
+      120% 90% at 18% 0%,
+      rgba(92, 220, 255, 0.1),
+      transparent 55%
+    ),
+    radial-gradient(
+      120% 90% at 100% 12%,
+      rgba(139, 123, 255, 0.12),
+      transparent 50%
+    ),
+    radial-gradient(
+      100% 120% at 50% 120%,
+      rgba(92, 220, 255, 0.06),
+      transparent 60%
+    );
+}
+
+.app-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(
+    80% 80% at 50% 45%,
+    black,
+    transparent 78%
+  );
+  mask-image: radial-gradient(80% 80% at 50% 45%, black, transparent 78%);
+}
+
+/* ---------- Animations ---------- */
+
+@keyframes ds-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ds-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ds-pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 0 6px rgba(248, 113, 113, 0);
+  }
+}
+
+@keyframes ds-shimmer {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.animate-ds-fade-in {
+  animation: ds-fade-in 0.25s ease both;
+}
+
+.animate-ds-slide-up {
+  animation: ds-slide-up 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-ds-pulse-glow {
+  animation: ds-pulse-glow 1.6s ease-in-out infinite;
 }

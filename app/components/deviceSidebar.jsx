@@ -96,8 +96,7 @@ const normalizeCssColor = (value) => {
   const swatch = document.createElement("span");
 
   swatch.style.color = value;
-  document.body.appendChild(swatch);
-
+  document.body.appendChild(swatch)
   const normalizedColor = getComputedStyle(swatch).color;
 
   swatch.remove();
